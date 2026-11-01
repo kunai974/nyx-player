@@ -91,7 +91,7 @@
   $$('.wall__row').forEach((row, i) => {
     const shift = (i * 5) % POSTERS.length;
     const list = [...POSTERS.slice(shift), ...POSTERS.slice(0, shift)];
-    const cells = list.map((n) => `<div class="poster" data-cursor="${fr ? 'Lecture' : 'Play'}">${img(P(n))}</div>`).join('');
+    const cells = list.map((n) => `<div class="poster">${img(P(n))}</div>`).join('');
     row.innerHTML = cells + cells;
   });
 
@@ -488,31 +488,6 @@
     else if (target === 0) scrollTo({ top: 0, behavior: 'smooth' });
     else target.scrollIntoView({ behavior: 'smooth' });
   }));
-
-  /* ---------- Curseur ---------- */
-  if (fine) {
-    const ring = $('.cursor');
-    const dot = $('.cursor-dot');
-    const label = $('.cursor__label');
-    const ringX = gsap.quickTo(ring, 'x', { duration: 0.5, ease: 'power3.out' });
-    const ringY = gsap.quickTo(ring, 'y', { duration: 0.5, ease: 'power3.out' });
-    const dotX = gsap.quickSetter(dot, 'x', 'px');
-    const dotY = gsap.quickSetter(dot, 'y', 'px');
-    addEventListener('pointermove', (e) => {
-      ringX(e.clientX); ringY(e.clientY); dotX(e.clientX); dotY(e.clientY);
-      const t = e.target instanceof Element ? e.target : null;
-      const labelled = t && t.closest('[data-cursor]');
-      const text = labelled ? labelled.dataset.cursor : '';
-      const hot = t && t.closest('a, button, [role="slider"], .compare');
-      const inFinale = t && t.closest('.finale');
-      ring.classList.toggle('has-label', !!text);
-      ring.classList.toggle('is-hover', !text && !!hot);
-      ring.classList.toggle('is-hidden', !!inFinale && !hot && !text);
-      if (text) label.textContent = text;
-    }, { passive: true });
-    document.addEventListener('pointerleave', () => ring.classList.add('is-hidden'));
-    document.addEventListener('pointerenter', () => ring.classList.remove('is-hidden'));
-  }
 
   /* ---------- Boutons aimantés ---------- */
   if (fine) {
