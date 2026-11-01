@@ -73,7 +73,7 @@ jobs:
         run: git config --global core.autocrlf true
 
       # Atelier privé : mpv.exe est dans Git LFS. Dépôt public : absent de git, téléchargé plus bas.
-      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           lfs: ${{ github.repository != 'kunai974/nyx-player' }}
           persist-credentials: false
