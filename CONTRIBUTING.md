@@ -35,7 +35,13 @@ runs the type check, the tests, ESLint, the CSS rules and the web build. For Rus
   `type(scope): description`, for example `fix(tv): keep focus on the last played channel`.
 - One topic per pull request, based on the `main` branch.
 - Describe what changes for the user, how you tested it, and on which platforms.
-- CI must be green before a pull request is reviewed.
+- CI must be green before a pull request is reviewed. For a first-time contributor, the maintainer
+  starts it by hand.
+- Sign off every commit (`git commit -s`). This adds a `Signed-off-by:` line, by which you certify
+  the [Developer Certificate of Origin](https://developercertificate.org/): the code is yours to
+  contribute, under the project's licence.
+- Replies are best effort: this is a small project, and a pull request may be declined or
+  reworked, in particular when it touches accounts, sync, the player or security.
 
 ## Licence
 

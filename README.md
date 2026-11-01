@@ -83,6 +83,8 @@ devices before release.
 ## Credits and licences
 
 - Nyx Player is released under the **GPL-3.0-or-later** licence.
+- The name “Nyx Player” and its logo are not covered by that licence. If you publish a modified
+  version, please give it a different name and logo.
 - This product uses the TMDB API but is not endorsed or certified by TMDB.
 - Video playback by [mpv](https://mpv.io/) and [FFmpeg](https://ffmpeg.org/). The full list of
   third-party components and their licences is shown in the app (Settings › About › Open source
