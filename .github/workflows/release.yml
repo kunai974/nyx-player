@@ -131,7 +131,7 @@ jobs:
         shell: bash
         run: echo "sha256=$(sha256sum "$RUNNER_TEMP/sortie/Nyx Player_${VERSION}_x64-setup.exe" | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
 
-      - uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: windows-non-signe
           path: ${{ runner.temp }}/sortie/Nyx Player_${{ needs.verifier.outputs.version }}_x64-setup.exe
@@ -203,7 +203,7 @@ jobs:
           cd "$RUNNER_TEMP/sortie"
           echo "sha256=$(sha256sum nyx-player-arm64-v"$VERSION"-non-signe.apk nyx-player-armv7-v"$VERSION"-non-signe.apk | sha256sum | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
 
-      - uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: android-non-signe
           path: |
@@ -270,7 +270,7 @@ jobs:
           cd "$RUNNER_TEMP/sortie"
           echo "sha256=$(sha256sum "Nyx-Player_${VERSION}_x64-setup.exe" "Nyx-Player_${VERSION}_x64-setup.exe.sig" | sha256sum | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
 
-      - uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: windows-signe
           path: |
@@ -338,7 +338,7 @@ jobs:
           cd "$RUNNER_TEMP/sortie"
           echo "sha256=$(sha256sum "nyx-player-arm64-v$VERSION.apk" "nyx-player-armv7-v$VERSION.apk" | sha256sum | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
 
-      - uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: android-signe
           path: |
