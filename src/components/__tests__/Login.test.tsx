@@ -318,4 +318,25 @@ describe('Login — adresse du serveur nettoyée', () => {
         fireEvent.click(screen.getByText('btn_login').closest('button')!);
         expect(onLogin).toHaveBeenCalledWith({ host: 'http://fournisseur.invalid:8080', username: 'jean', password: 'secret-factice' });
     });
+
+    const loginWith = (host: string, user: string, pass: string) => {
+        const onLogin = vi.fn();
+        render(<Login onLogin={onLogin} isLoading={false} progress={0} />);
+        const [h, u, p] = document.querySelectorAll<HTMLInputElement>('.form-group input');
+        fireEvent.change(h, { target: { value: host } });
+        fireEvent.change(u, { target: { value: user } });
+        fireEvent.change(p, { target: { value: pass } });
+        fireEvent.click(screen.getByText('btn_login').closest('button')!);
+        return onLogin;
+    };
+
+    it('adresse player_api.php complète collée, champs vides : serveur et identifiants en sont tirés', () => {
+        const onLogin = loginWith('http://fournisseur.invalid:8080/player_api.php?username=jean&password=secret-factice', '', '');
+        expect(onLogin).toHaveBeenCalledWith({ host: 'http://fournisseur.invalid:8080', username: 'jean', password: 'secret-factice' });
+    });
+
+    it('adresse collée et identifiants saisis : ceux saisis l\'emportent', () => {
+        const onLogin = loginWith('http://fournisseur.invalid/get.php?username=ancien&password=ancien', 'jean', 'secret-factice');
+        expect(onLogin).toHaveBeenCalledWith({ host: 'http://fournisseur.invalid', username: 'jean', password: 'secret-factice' });
+    });
 });

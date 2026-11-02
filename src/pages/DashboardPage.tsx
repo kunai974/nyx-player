@@ -6,6 +6,7 @@ import DashboardHero from '../components/Dashboard/DashboardHero';
 import DashboardModeSwitch, { DashboardMode } from '../components/Dashboard/DashboardModeSwitch';
 import ContinueWatchingRow from '../components/Dashboard/ContinueWatchingRow';
 import LightIptvMode from '../components/Iptv/LightIptvMode';
+import { knownCategoryIds, rowCategoryOf } from '../components/Iptv/categoryRows';
 import RecycledRail from '../components/Iptv/rail/RecycledRail';
 import { isRailOn } from '../components/Iptv/rail/rail';
 import { buildContinueItems, type ContinueActions } from '../components/Dashboard/continueItems';
@@ -584,10 +585,12 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
               if (onOpenCategoryDetail && effectiveLightIndexes) {
                 const itemsMap = effectiveDashboardMode === 'films' ? effectiveLightIndexes.movies : effectiveLightIndexes.series;
                 const iconPrefixes = effectiveLightIndexes.iconPrefixes;
+                // Rangée « Autres » comprise : même rangement que les rangées de l'accueil
+                const known = knownCategoryIds(effectiveLightIndexes.categories, effectiveDashboardMode === 'films' ? 'movie' : 'series');
 
                 const items: Array<{ name: string; stream_id?: number; series_id?: number; tmdb: number; stream_icon?: string; cover?: string; category_id: string }> = [];
                 itemsMap.forEach((item) => {
-                  if (item.categoryId === categoryId) {
+                  if (rowCategoryOf(item, known) === categoryId) {
                     const iconUrl = getIconUrl(item, iconPrefixes);
                     if (effectiveDashboardMode === 'films') {
                       items.push({
@@ -595,7 +598,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
                         stream_id: item.id,
                         tmdb: item.tmdbId,
                         stream_icon: iconUrl,
-                        category_id: categoryId,
+                        category_id: item.categoryId,
                       });
                     } else {
                       items.push({
@@ -603,7 +606,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
                         series_id: item.id,
                         tmdb: item.tmdbId,
                         cover: iconUrl,
-                        category_id: categoryId,
+                        category_id: item.categoryId,
                       });
                     }
                   }

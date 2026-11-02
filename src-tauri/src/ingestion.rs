@@ -18,6 +18,27 @@ pub const PROVIDER_SERVER_ERROR: &str = "provider_server_error";
 /// introuvable, connexion refusée) : même message « le serveur ne répond pas » côté page.
 pub const PROVIDER_UNREACHABLE: &str = "provider_unreachable";
 
+/// Début du message d'erreur quand le certificat https du fournisseur est refusé (expiré, signé par
+/// lui-même, autre nom) : la page le dit au lieu de « le serveur ne répond pas ». La vérification
+/// n'est jamais désactivée : l'utilisateur peut essayer l'adresse en http si son fournisseur l'offre.
+pub const PROVIDER_CERTIFICATE_ERROR: &str = "provider_certificate_error";
+
+/// Vrai si l'erreur, ou une de ses causes, parle du certificat. rustls (Android) écrit « invalid
+/// peer certificate », Windows écrit son message dans la langue du système (« certificate »,
+/// « certificat ») : une autre langue, ou un message Windows sans ce mot (nom de serveur qui ne
+/// correspond pas : « The target principal name is incorrect »), retombe sur « le serveur ne
+/// répond pas », comme avant.
+fn is_certificate_error(error: &(dyn std::error::Error + 'static)) -> bool {
+    let mut current = Some(error);
+    while let Some(e) = current {
+        if e.to_string().to_lowercase().contains("certificat") {
+            return true;
+        }
+        current = e.source();
+    }
+    false
+}
+
 /// Version du banc de tests automatiques : mode audit ET `VITE_BANC=1` à la compilation,
 /// comme le verrou « jamais de vrai flux ». Une version publiée n'a jamais la fonction `audit` :
 /// pour elle, cette valeur est fausse et les délais ci-dessous restent ceux de l'app.
@@ -114,7 +135,9 @@ pub async fn iptv_fetch(url: String, dns_provider: String) -> Result<String, Str
 fn request_error(context: &str, e: reqwest::Error) -> String {
     // without_url(): the reqwest error text embeds the full URL, Xtream credentials included.
     let e = e.without_url();
-    if e.is_timeout() || e.is_connect() {
+    if is_certificate_error(&e) {
+        format!("{}: {}", PROVIDER_CERTIFICATE_ERROR, e)
+    } else if e.is_timeout() || e.is_connect() {
         format!("{}: {}", PROVIDER_UNREACHABLE, e)
     } else {
         format!("{}: {}", context, e)
@@ -1023,6 +1046,36 @@ mod tests {
             .unwrap();
         let url = format!("http://fournisseur-inexistant.invalid/player_api.php{}", SECRET_QUERY);
         assert_unreachable(&fetch_text(&client, &url, 1024).await.unwrap_err());
+    }
+
+    /// Erreur réseau imbriquée, comme celles de reqwest (cause dans `source`)
+    #[derive(Debug)]
+    struct Layer(&'static str, Option<Box<Layer>>);
+    impl std::fmt::Display for Layer {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            f.write_str(self.0)
+        }
+    }
+    impl std::error::Error for Layer {
+        fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+            self.1.as_deref().map(|e| e as _)
+        }
+    }
+
+    #[test]
+    fn a_refused_certificate_is_told_apart_from_an_unreachable_server() {
+        let chain = |cause: &'static str| Layer("error sending request", Some(Box::new(Layer("client error (Connect)", Some(Box::new(Layer(cause, None)))))));
+        // rustls (Android), Windows en anglais et en français
+        for cause in [
+            "invalid peer certificate: UnknownIssuer",
+            "The certificate chain was issued by an authority that is not trusted.",
+            "La chaîne de certificats a été émise par une autorité qui n'est pas approuvée.",
+        ] {
+            assert!(super::is_certificate_error(&chain(cause)), "{}", cause);
+        }
+        for cause in ["Connection refused (os error 111)", "dns error: failed to lookup address", "operation timed out"] {
+            assert!(!super::is_certificate_error(&chain(cause)), "{}", cause);
+        }
     }
 
     #[tokio::test]

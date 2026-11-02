@@ -6,7 +6,7 @@ import { useSupabaseAuth } from '../contexts/SupabaseAuthContext';
 import { useDevOverrides } from '../contexts/DevOverrideContext';
 import NyxButton from './Common/NyxButton';
 import { EyeOpen, EyeClosed } from './Common/EyeIcons';
-import { readM3uParam } from '../utils/xtreamCredentials';
+import { readM3uParam, splitPastedXtreamAddress } from '../utils/xtreamCredentials';
 import { normalizeProviderHost, noteTypedProviderHost } from '../utils/providerHost';
 import { isTv } from '../utils/platform';
 import LocalDatabaseDamagedNotice from './Common/LocalDatabaseDamagedNotice';
@@ -71,14 +71,19 @@ const Login: React.FC<LoginProps> = ({ onLogin, isLoading, progress, onBackToPro
       return;
     }
 
-    if (!host.trim() || !username || !password) {
+    // Adresse complète collée (`…/player_api.php?username=…`) : le serveur seul, et les identifiants
+    // qu'elle contient pour les champs laissés vides
+    const pasted = splitPastedXtreamAddress(host);
+    const user = username || pasted.username;
+    const pass = password || pasted.password;
+    if (!pasted.host.trim() || !user || !pass) {
       setError(t('error_missing_fields'));
       return;
     }
     // Adresse nettoyée (espaces, « / » final, majuscules) : le même serveur écrit autrement n'est pas
     // pris pour un autre fournisseur
-    noteTypedProviderHost(host);
-    onLogin({ host: normalizeProviderHost(host), username, password });
+    noteTypedProviderHost(pasted.host);
+    onLogin({ host: normalizeProviderHost(pasted.host), username: user, password: pass });
   };
 
   // Télécommande : valider un champ avec OK ne doit pas envoyer le formulaire (les champs suivants sont

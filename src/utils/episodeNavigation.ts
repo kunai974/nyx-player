@@ -27,7 +27,8 @@ export function findEpisodeSeason(
   episodeId: string
 ): number | null {
   for (const [seasonNum, eps] of Object.entries(episodes)) {
-    if (eps.some(ep => ep.id === episodeId)) {
+    // Numéro en nombre ou en texte selon le fournisseur
+    if (eps.some(ep => String(ep.id) === String(episodeId))) {
       return Number(seasonNum);
     }
   }

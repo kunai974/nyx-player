@@ -1,6 +1,11 @@
 use crate::dns::CascadeDohResolver;
 use std::sync::Arc;
 
+/// User-Agent navigateur, le même que celui du lecteur (mpv) et de la sonde de lecture.
+/// À garder aligné avec `mpvBridge.ts` et `MpvEngine.kt`. reqwest n'en envoie AUCUN par défaut : beaucoup de fournisseurs (ou leur protection
+/// Cloudflare) répondent alors par une page web au lieu du JSON de `player_api.php`.
+pub const IPTV_USER_AGENT: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
+
 /// Construit un reqwest::Client avec DNS DoH cascade si provider != "system".
 /// - connect_timeout: échec rapide si serveur injoignable
 /// - timeout: durée totale maximale de la requête
@@ -10,6 +15,7 @@ pub fn build_http_client(
     total_timeout_secs: u64,
 ) -> Result<reqwest::Client, String> {
     let mut builder = reqwest::Client::builder()
+        .user_agent(IPTV_USER_AGENT)
         .connect_timeout(std::time::Duration::from_secs(connect_timeout_secs))
         .timeout(std::time::Duration::from_secs(total_timeout_secs))
         // The provider addresses carry the subscriber's credentials (`?username=…&password=…`):
@@ -170,5 +176,25 @@ mod tests {
         let err = client.get(format!("http://127.0.0.1:{}/", port)).send().await.unwrap_err();
         assert!(err.is_connect(), "{}", err);
         assert!(started.elapsed() < Duration::from_secs(10), "{:?}", started.elapsed());
+    }
+
+    /// Le client présente un User-Agent navigateur : reqwest n'en envoie aucun par défaut, et des
+    /// fournisseurs (ou Cloudflare) répondent alors par une page web au lieu du JSON.
+    #[tokio::test]
+    async fn the_client_sends_a_browser_user_agent() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        let (tx, rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut buf = [0u8; 4096];
+            let k = stream.read(&mut buf).unwrap();
+            let _ = tx.send(String::from_utf8_lossy(&buf[..k]).to_lowercase());
+            let _ = stream.write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\n[]");
+        });
+        let client = build_http_client("system", 5, 10).unwrap();
+        client.get(format!("http://{}/player_api.php", addr)).send().await.unwrap();
+        let request = rx.recv_timeout(Duration::from_secs(2)).unwrap();
+        assert!(request.contains(&format!("user-agent: {}\r\n", super::IPTV_USER_AGENT.to_lowercase())), "{}", request);
     }
 }

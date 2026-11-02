@@ -30,7 +30,8 @@ export function resolveCurrentEpisodeInfo(
 
     // Trouver le episode_num exact
     const eps = series.episodes[season] || [];
-    const found = eps.find((ep: XtreamEpisode) => ep.id === currentlyPlaying.id);
+    // Numéro en nombre ou en texte selon le fournisseur
+    const found = eps.find((ep: XtreamEpisode) => String(ep.id) === String(currentlyPlaying.id));
     return found ? { season, episodeNum: found.episode_num } : null;
 }
 
@@ -56,9 +57,11 @@ export function buildStreamUrl(
 
     // Déterminer le type et construire l'URL
     if (streamType === 'live' && hasStreamId) {
-        // Live TV explicite. Si le provider renseigne un format (ts, m3u8) on l'utilise, sinon 'ts'.
-        container = itemContainerExt || 'ts';
-        streamUrl = api.getStreamUrl('live', Number(item.stream_id), itemContainerExt);
+        // Live TV explicite. Si le provider renseigne un format (ts, m3u8) on l'utilise ; sinon m3u8
+        // quand le compte n'autorise que le HLS (allowed_output_formats), sinon 'ts'.
+        const liveExt = itemContainerExt ?? api.preferredLiveExtension();
+        container = liveExt || 'ts';
+        streamUrl = api.getStreamUrl('live', Number(item.stream_id), liveExt);
     } else if (itemContainerExt) {
         // VOD avec extension - distinguer film (stream_id) vs épisode (id)
         container = itemContainerExt;

@@ -8,7 +8,7 @@ import { isRailOn, type RailSource } from './rail/rail';
 import { createRailRowCache } from './rail/railRowCache';
 import type { LightMovie, LightSeries, LightCategory, LightIndexes } from '../../types/lightIndex';
 import { getIconUrl } from '../../types/lightIndex';
-import { hasValidTmdbId } from '../../utils/normalizeTmdb';
+import { OTHER_CATEGORY_ID, groupItemsByCategory, knownCategoryIds } from './categoryRows';
 import { isHidden } from '../../services/hiddenCategoriesService';
 import { useHiddenCategoriesVersion } from '../../hooks/useHiddenCategoriesVersion';
 import './IptvMode.css';
@@ -155,27 +155,27 @@ const LightIptvMode: React.FC<LightIptvModeProps> = ({
         // eslint-disable-next-line react-hooks/exhaustive-deps -- dépendance voulue, voir ci-dessus
     }, [lightIndexes.categories, type, hiddenVersion]);
 
-    // Group items by category_id - FILTERED for carousel display (has TMDB + image)
-    const itemsByCategory = useMemo(() => {
-        const map = new Map<string, LightItem[]>();
-        itemsMap.forEach((item) => {
-            if (!hasValidTmdbId(item.tmdbId)) return;
-            // Check if has icon
-            if (item.iconPrefixId < 0 || !item.iconSuffix) return;
-            const catId = item.categoryId;
-            if (!map.has(catId)) map.set(catId, []);
-            map.get(catId)!.push(item);
-        });
-        return map;
-    }, [itemsMap]);
+    // Titres rangés par catégorie (groupItemsByCategory) : tous, si le fournisseur ne donne aucun numéro TMDB
+    const byTmdb = type === 'movies' ? lightIndexes.moviesByTmdb : lightIndexes.seriesByTmdb;
+    const catalogHasTmdb = byTmdb.size > 0;
+    const catType = type === 'movies' ? 'movie' : 'series';
+    const itemsByCategory = useMemo(
+        () => groupItemsByCategory(itemsMap.values(), catalogHasTmdb, knownCategoryIds(lightIndexes.categories, catType)),
+        [itemsMap, catalogHasTmdb, lightIndexes.categories, catType],
+    );
 
-    // Filter categories that have items
+    // Filter categories that have items, then « Autres » (titres d'une catégorie que le fournisseur ne liste pas)
+    const otherLabel = t('other_category' as 'loading'); // Cast: key exists but types not regenerated
     const categoriesWithItems = useMemo(() => {
-        return categories.filter((cat) => {
+        const withItems = categories.filter((cat) => {
             const catItems = itemsByCategory.get(cat.id);
             return catItems && catItems.length > 0;
         });
-    }, [categories, itemsByCategory]);
+        if (itemsByCategory.has(OTHER_CATEGORY_ID)) {
+            withItems.push({ id: OTHER_CATEGORY_ID, name: otherLabel, type: catType });
+        }
+        return withItems;
+    }, [categories, itemsByCategory, otherLabel, catType]);
 
     // TV : rangées du rail recyclé (rail/rail.ts), écrites sans React. Les gestes passent par la dernière version des
     // rappels : sans quoi chaque rendu de l'accueil (qui les recrée) ferait remplir de nouveau les rangées montées

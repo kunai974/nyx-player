@@ -25,6 +25,8 @@ vi.mock('../../services/storage', () => ({
   },
 }));
 vi.mock('../../services/xtreamApi', () => ({
+  isProviderAccountInactiveError: (e: unknown) => e instanceof Error && e.message === 'provider_account_inactive',
+  inactiveAccountInfo: () => undefined,
   XtreamApiService: class {
     authenticate = vi.fn(async () => ({ user_info: { status: 'Active' } }));
   },
@@ -309,6 +311,21 @@ describe('useSessionLifecycle — catalogue neuf', () => {
     try {
       await act(async () => { await result.current.refreshSources(); });
       expect(startCloudResync).toHaveBeenCalledWith('compte-a', { syncNow: true });
+    } finally {
+      error.mockRestore();
+    }
+  });
+
+  it('« Actualiser » avec un certificat https refusé : le message le dit', async () => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const { loadLightIndexes } = await import('../../services/catalogLight');
+    vi.mocked(loadLightIndexes).mockRejectedValueOnce('provider_certificate_error: invalid peer certificate: Expired');
+    const setters = makeSetters();
+    const { result } = renderHook(() => useSessionLifecycle(setters, creds, null, t));
+
+    try {
+      await act(async () => { await result.current.refreshSources(); });
+      expect(setters.setSessionError).toHaveBeenCalledWith('auth:error_provider_certificate');
     } finally {
       error.mockRestore();
     }

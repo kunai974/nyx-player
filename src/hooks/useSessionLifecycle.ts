@@ -14,8 +14,8 @@ import type { LightIndexes } from '../types/lightIndex';
 import type { TabType } from '../contexts/NavigationContext';
 import type { PendingProviderChange } from '../types/session';
 import { StorageService } from '../services/storage';
-import { XtreamApiService, isProviderHtmlResponseError } from '../services/xtreamApi';
-import { isProviderServerError } from '../services/networkService';
+import { XtreamApiService, inactiveAccountInfo, isProviderAccountInactiveError, isProviderHtmlResponseError } from '../services/xtreamApi';
+import { isProviderCertificateError, isProviderServerError } from '../services/networkService';
 import { cancelCatalogIngestion } from '../services/catalogIngestion';
 import { loadLightIndexes } from '../services/catalogLight';
 import { setMeta, getMeta, clearCatalogData, getDatabase } from '../services/dbCore';
@@ -180,7 +180,9 @@ export function useSessionLifecycle(
             // Serveur du fournisseur en panne ou injoignable : ne pas faire croire à des identifiants faux
             setSessionError(t(damaged ? 'common:local_db_damaged_error'
                 : isProviderServerError(error) ? 'auth:error_provider_unavailable'
-                : isProviderHtmlResponseError(error) ? 'auth:error_provider_html' : 'auth:error_login_failed'));
+                : isProviderCertificateError(error) ? 'auth:error_provider_certificate'
+                : isProviderHtmlResponseError(error) ? 'auth:error_provider_html'
+                : isProviderAccountInactiveError(error) ? 'auth:error_provider_account_inactive' : 'auth:error_login_failed'));
             setIsLoading(false);
         };
         // Base illisible dès l'ouverture : le même message qu'un échec plus loin, sans sablier sans fin
@@ -453,7 +455,12 @@ export function useSessionLifecycle(
             // « Compte » montrerait les infos de la session fermée
             new XtreamApiService(savedCreds).authenticate()
                 .then((authResult) => { if (stillCurrent()) setAccountInfo(authResult.user_info); })
-                .catch((e) => log.warn('Could not refresh account info:', e));
+                .catch((e) => {
+                    // Abonnement expiré ou suspendu : la carte « Compte » affiche quand même son état
+                    const info = inactiveAccountInfo(e);
+                    if (info && stillCurrent()) setAccountInfo(info as XtreamUserInfo);
+                    log.warn('Could not refresh account info:', e);
+                });
 
             // Sync cloud, lancée plus haut (await — watchlist must finish before re-link)
             const currentHash = getLastProviderHash();
@@ -615,7 +622,12 @@ export function useSessionLifecycle(
                 return;
             }
             log.error('Refresh failed:', error);
-            setSessionError(t(isProviderServerError(error) ? 'auth:error_provider_unavailable' : 'common:error_refresh'));
+            // Abonnement expiré ou suspendu : la carte « Compte » le montre aussi
+            const inactiveInfo = inactiveAccountInfo(error);
+            if (inactiveInfo) setAccountInfo(inactiveInfo as XtreamUserInfo);
+            setSessionError(t(isProviderServerError(error) ? 'auth:error_provider_unavailable'
+                : isProviderCertificateError(error) ? 'auth:error_provider_certificate'
+                : isProviderAccountInactiveError(error) ? 'auth:error_provider_account_inactive' : 'common:error_refresh'));
             setIsLoading(false);
             setProgress(0);
             // Même session : l'actualisation automatique reprend son cours

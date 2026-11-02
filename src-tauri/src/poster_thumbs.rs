@@ -468,6 +468,8 @@ pub fn client() -> &'static reqwest::Client {
     // retient un fil de préparation, et la page reprend l'adresse d'origine en cas d'échec
     CLIENT.get_or_init(|| {
         reqwest::Client::builder()
+            // Même User-Agent navigateur que le reste de l'app (sans lui, certains fournisseurs répondent par une page web)
+            .user_agent(crate::http::IPTV_USER_AGENT)
             .connect_timeout(std::time::Duration::from_secs(4))
             .timeout(std::time::Duration::from_secs(10))
             // L'adresse d'une affiche peut porter les identifiants de l'abonné : jamais transmise à l'hôte d'une redirection

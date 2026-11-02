@@ -24,5 +24,6 @@
   "carousel_new_movies_this_week": "New Movies (This Week)",
   "carousel_new_series_this_week": "New Series (This Week)",
   "source_instability_message": "We are detecting instability with the playlist source. Some content may be inaccessible at the moment.",
-  "quality_badge_hd": "HD"
+  "quality_badge_hd": "HD",
+  "other_category": "Other"
 }

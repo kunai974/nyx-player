@@ -233,6 +233,11 @@ describe('findEpisodeSeason', () => {
     expect(findEpisodeSeason(episodes, '999')).toBeNull();
   });
 
+  it('numéro d\'épisode en nombre chez le fournisseur : saison trouvée', () => {
+    const numeric = { 3: [{ ...mockEpisode('301', 1), id: 301 as unknown as string }] };
+    expect(findEpisodeSeason(numeric, '301')).toBe(3);
+  });
+
   it('retourne null pour un objet vide', () => {
     expect(findEpisodeSeason({}, '101')).toBeNull();
   });

@@ -33,6 +33,8 @@ vi.mock('../../services/storage', () => ({
 const authenticate = vi.hoisted(() => vi.fn(async (): Promise<unknown> => ({ user_info: { status: 'Active' } })));
 vi.mock('../../services/xtreamApi', () => ({
   isProviderHtmlResponseError: (e: unknown) => e instanceof Error && e.message === 'provider_html_response',
+  isProviderAccountInactiveError: (e: unknown) => e instanceof Error && e.message === 'provider_account_inactive',
+  inactiveAccountInfo: (e: unknown) => (e instanceof Error && e.message === 'provider_account_inactive' ? (e as Error & { userInfo?: unknown }).userInfo : undefined),
   XtreamApiService: class {
     authenticate = authenticate;
   },
@@ -344,6 +346,30 @@ describe('useSessionLifecycle — session fermée pendant la connexion', () => {
 
     expect(setters.setSessionError).toHaveBeenCalledWith('auth:error_provider_html');
     error.mockRestore();
+  });
+
+  it('abonnement expiré ou suspendu chez le fournisseur : le message le dit, au lieu de « échec de connexion »', async () => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+    authenticate.mockRejectedValueOnce(new Error('provider_account_inactive'));
+    const setters = makeSetters();
+    const { result } = renderHook(() => useSessionLifecycle(setters, creds, null, t));
+
+    await act(async () => { await result.current.login(creds); });
+
+    expect(setters.setSessionError).toHaveBeenCalledWith('auth:error_provider_account_inactive');
+    expect(setters.setIsLoggedIn).not.toHaveBeenCalledWith(true);
+    error.mockRestore();
+  });
+
+  it('certificat https du fournisseur refusé : le message le dit, pas « le serveur ne répond pas »', async () => {
+    authenticate.mockRejectedValueOnce('provider_certificate_error: error sending request: invalid peer certificate: Expired');
+    const setters = makeSetters();
+    const { result } = renderHook(() => useSessionLifecycle(setters, creds, null, t));
+
+    await act(async () => { await result.current.login(creds); });
+
+    expect(setters.setSessionError).toHaveBeenCalledWith('auth:error_provider_certificate');
+    expect(setters.setSessionError).not.toHaveBeenCalledWith('auth:error_provider_unavailable');
   });
 
   it('serveur du fournisseur en panne (5xx) : message « ne répond pas », pas « identifiants faux »', async () => {

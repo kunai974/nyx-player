@@ -135,6 +135,10 @@ export function useMpvObserver(
   const [bingeCountdown, setBingeCountdown] = useState(0);
   const bingeIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const bingeTriggeredRef = useRef(false);
+  /** Secondes restantes du décompte : gardées pendant la pause pour reprendre au même point */
+  const bingeRemainingRef = useRef(0);
+  /** Lecture en pause, lisible dans l'écouteur et le décompte */
+  const isPausedRef = useRef(false);
 
   // Geek Stats state
   const [geekStats, setGeekStats] = useState<GeekStats>({
@@ -175,25 +179,51 @@ export function useMpvObserver(
   }, []);
 
   // ---- Binge Mode handlers ----
-  const handleBingePlayNow = useCallback(() => {
+  const stopBingeTicker = useCallback(() => {
     if (bingeIntervalRef.current) {
       clearInterval(bingeIntervalRef.current);
       bingeIntervalRef.current = null;
     }
+  }, []);
+
+  /**
+   * Décompte de l'épisode suivant, une seconde à la fois depuis bingeRemainingRef. Arrêté pendant la
+   * pause et relancé à la reprise : sinon l'épisode suivant partait alors que l'utilisateur avait mis
+   * en pause. Lancer l'épisode suivant hors d'une fonction de mise à jour d'état : React rejoue
+   * ces fonctions sous StrictMode, l'épisode partait deux fois en mode développement.
+   */
+  const startBingeTicker = useCallback(() => {
+    if (bingeIntervalRef.current || !showBingePopupRef.current || isPausedRef.current) return;
+    bingeIntervalRef.current = setInterval(() => {
+      bingeRemainingRef.current -= 1;
+      if (bingeRemainingRef.current > 0) {
+        setBingeCountdown(bingeRemainingRef.current);
+        return;
+      }
+      if (bingeIntervalRef.current) {
+        clearInterval(bingeIntervalRef.current);
+        bingeIntervalRef.current = null;
+      }
+      showBingePopupRef.current = false;
+      setShowBingePopup(false);
+      setBingeCountdown(0);
+      void onNextEpisodeRef.current?.();
+    }, 1000);
+  }, []);
+
+  const handleBingePlayNow = useCallback(() => {
+    stopBingeTicker();
     showBingePopupRef.current = false;
     setShowBingePopup(false);
     void onNextEpisodeRef.current?.();
-  }, []);
+  }, [stopBingeTicker]);
 
   const handleBingeCancel = useCallback(() => {
-    if (bingeIntervalRef.current) {
-      clearInterval(bingeIntervalRef.current);
-      bingeIntervalRef.current = null;
-    }
+    stopBingeTicker();
     showBingePopupRef.current = false;
     setShowBingePopup(false);
     // Garde bingeTriggeredRef à true pour éviter le re-trigger immédiat
-  }, []);
+  }, [stopBingeTicker]);
 
   // ---- Re-sync state from MPV (for values set by usePlayerPreferences) ----
   const syncFromMpv = useCallback(async () => {
@@ -265,9 +295,13 @@ export function useMpvObserver(
         if (disposed) return;
         switch (name) {
           case 'pause':
+            isPausedRef.current = data === true;
             setIsPaused(data as boolean);
             // Position exacte à l'arrêt : la dernière valeur a pu être retenue par la limite d'affichage
             if (data === true) showCurrentTime(currentTimeRef.current);
+            // Décompte de l'épisode suivant figé pendant la pause, repris au même point ensuite
+            if (isPausedRef.current) stopBingeTicker();
+            else startBingeTicker();
             break;
 
           case 'time-pos': {
@@ -323,26 +357,9 @@ export function useMpvObserver(
               showBingePopupRef.current = true;
               setShowBingePopup(true);
               setBingeCountdown(bingeCountdownSeconds);
-
-              // Start countdown interval. Le décompte vit dans une variable locale : lancer l'épisode
-              // suivant depuis une fonction de mise à jour d'état le lançait deux fois en mode
-              // développement (React rejoue ces fonctions sous StrictMode).
-              let remaining = bingeCountdownSeconds;
-              bingeIntervalRef.current = setInterval(() => {
-                remaining -= 1;
-                if (remaining > 0) {
-                  setBingeCountdown(remaining);
-                  return;
-                }
-                if (bingeIntervalRef.current) {
-                  clearInterval(bingeIntervalRef.current);
-                  bingeIntervalRef.current = null;
-                }
-                showBingePopupRef.current = false;
-                setShowBingePopup(false);
-                setBingeCountdown(0);
-                void onNextEpisodeRef.current?.();
-              }, 1000);
+              bingeRemainingRef.current = bingeCountdownSeconds;
+              // Ne démarre pas si la lecture est en pause : il partira à la reprise
+              startBingeTicker();
             }
 
             lastTimePosRef.current = pos;
@@ -427,7 +444,7 @@ export function useMpvObserver(
       unlisten?.();
       unlisten = null;
     };
-  }, [isConnected, showCurrentTime, setIsSeeking, syncInitialFromMpv]);
+  }, [isConnected, showCurrentTime, setIsSeeking, syncInitialFromMpv, startBingeTicker, stopBingeTicker]);
 
   // ---- Geek Stats polling ----
   useEffect(() => {
@@ -498,13 +515,7 @@ export function useMpvObserver(
   }, [isConnected, showGeekStats]);
 
   // ---- Cleanup binge interval on unmount ----
-  useEffect(() => {
-    return () => {
-      if (bingeIntervalRef.current) {
-        clearInterval(bingeIntervalRef.current);
-      }
-    };
-  }, []);
+  useEffect(() => stopBingeTicker, [stopBingeTicker]);
 
   return {
     isPaused, currentTime, duration, volume, isMuted,

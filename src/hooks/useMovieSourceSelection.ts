@@ -105,11 +105,15 @@ export function useMovieSourceSelection({
   // 3. Watchlist (async from SQLite)
   const [inWatchlist, setInWatchlist] = useState(false);
 
+  // Sans numéro TMDB, le film est rangé sous le numéro de source de sa première version (celui que le
+  // bouton de la fiche enregistre) : sinon le bouton restait sur « + » pour un film déjà dans Ma liste.
+  const firstStreamId = Number(initialVersions[0]?.stream_id) || 0;
   useEffect(() => {
-    if (resolvedTmdbId > 0) {
-      isInWatchlist(0, resolvedTmdbId, 'movie').then(setInWatchlist).catch(warnOnReject('MovieSource'));
+    if (resolvedTmdbId > 0 || firstStreamId > 0) {
+      isInWatchlist(resolvedTmdbId > 0 ? 0 : firstStreamId, resolvedTmdbId, 'movie')
+        .then(setInWatchlist).catch(warnOnReject('MovieSource'));
     }
-  }, [resolvedTmdbId]);
+  }, [resolvedTmdbId, firstStreamId]);
 
   // 4. Progress state (async — re-checked on source change + player close)
   const [hasMovieProgress, setHasMovieProgress] = useState(false);

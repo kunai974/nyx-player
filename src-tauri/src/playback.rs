@@ -11,7 +11,7 @@
 use std::time::Duration;
 
 /// Same User-Agent as the mpv process (providers reject unknown clients).
-const PROBE_USER_AGENT: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
+const PROBE_USER_AGENT: &str = crate::http::IPTV_USER_AGENT;
 
 /// One request per load failure (Range 0-0, body never read) — no retry here: automatic
 /// reconnection is paced by the front-end to stay far below provider anti-flood limits.

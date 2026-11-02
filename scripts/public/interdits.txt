@@ -1,0 +1,91 @@
+# Chemins qui n'ont rien à faire dans le dépôt public de Nyx Player (kunai974/nyx-player).
+# Une seule liste, deux usages :
+#   - l'outil d'export de l'atelier privé retire ces fichiers de la copie qu'il fabrique ;
+#   - le contrôle de PR du dépôt public (scripts/public/garde-depot-public.mjs) refuse toute PR qui en ajoute.
+# Syntaxe : un chemin ou un motif par ligne (* = un niveau, ** = plusieurs niveaux), à retirer.
+# Une ligne « ! » garde un chemin que le motif plus large retirerait. La dernière règle qui correspond gagne.
+
+# --- Configuration des outils de travail ---
+.agent/**
+.cursorrules
+.claude/**
+CLAUDE.md
+.vscode/**
+!.vscode/extensions.json
+.graphify_*
+graphify-out/**
+tv-harness.html
+
+# --- Documentation de travail (seuls les documents d'explication sont publiés) ---
+docs/**
+!docs/CONVENTIONS.md
+!docs/CSS_RULES.md
+!docs/CSS_PATTERNS.md
+!docs/DESIGN_TOKENS.md
+!docs/BRAND_SYSTEM.md
+!docs/TMDB_API_REFERENCE.md
+!docs/BUILDING.md
+PRODUCT.md
+audit/**
+
+# --- Essais, brouillons, sorties de travail ---
+mobile-spike/**
+web-lab/**
+vitest_output.txt
+screen/**
+web/auth/_preview.html
+**/zz-preview-remote-TEST-ONLY.json
+supabase/seance/**
+supabase/.temp/**
+
+# --- Environnement et secrets de fichier (seul le modèle sans valeur est publié) ---
+**/.env
+**/.env.*
+!**/.env.example
+**/*.jks
+**/*.keystore
+**/*.p12
+**/*.pfx
+**/*.pem
+**/*.key
+**/*.p8
+**/id_rsa*
+**/id_ed25519*
+**/keystore.properties
+**/local.properties
+**/google-services.json
+**/secrets.env
+
+# --- Scripts liés à nos appareils, nos séances ou notre CI locale, et leurs tests ---
+scripts/ci-locale.ps1
+scripts/mesures-chromecast.ps1
+scripts/supabase-sauvegarde.ps1
+scripts/supabase-restauration.ps1
+scripts/android-mesure-apk.ps1
+scripts/android-banc-apk.ps1
+scripts/banc-pc-verifier.ps1
+scripts/android-audit-apk.ps1
+scripts/windows-audit-build.ps1
+scripts/emulator-screen.ps1
+scripts/test/ci-locale-garde.test.mjs
+scripts/test/ci-locale-gradle.test.mjs
+scripts/test/sauvegarde-supabase-essai.test.mjs
+scripts/test/garde-fous.test.mjs
+scripts/test/site-nouvel-accueil.test.mjs
+scripts/test/release-apk-paquet.test.mjs
+bench-markers-suppressions.json
+src/__tests__/benchMarkers.test.ts
+src/__tests__/benchTestIds.test.ts
+
+# --- Outils de passage entre l'atelier et le dépôt public (restent à l'atelier) ---
+scripts/public/exporter.mjs
+scripts/public/export-public.mjs
+scripts/public/sync-public.mjs
+scripts/public/retour-public.mjs
+scripts/test/depot-public-outils.test.mjs
+
+# --- Binaires : téléchargés par un script depuis les « releases », pas stockés dans git ---
+resources/mpv/mpv.exe
+src-tauri/plugins/tauri-plugin-nyx-android/android/libs/**
+!src-tauri/plugins/tauri-plugin-nyx-android/android/libs/README.md
+!src-tauri/plugins/tauri-plugin-nyx-android/android/libs/maven/com/nyxplayer/libmpv-lgpl/*/*.pom

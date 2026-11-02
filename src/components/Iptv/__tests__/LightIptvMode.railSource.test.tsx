@@ -36,6 +36,8 @@ const indexes = {
     ['b', { id: 'b', name: 'Comédie', type: 'movie' }],
     ['c', { id: 'c', name: 'Drame', type: 'movie' }],
   ]),
+  moviesByTmdb: new Map([[1, movie(1, 'a')]]),
+  seriesByTmdb: new Map(),
   iconPrefixes: ['https://image.tmdb.org/t/p/w342/'],
 } as unknown as LightIndexes;
 

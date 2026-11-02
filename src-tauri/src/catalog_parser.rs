@@ -82,20 +82,45 @@ where
 {
     use serde::de::Error;
     match deserialize_scalar(deserializer)? {
-        Some(serde_json::Value::Number(n)) => n
-            .as_i64()
-            .ok_or_else(|| D::Error::custom("Invalid stream_id number")),
-        Some(serde_json::Value::String(s)) => s
-            .trim()
-            .parse::<i64>()
-            .map_err(|_| D::Error::custom(format!("Cannot parse stream_id: {}", s))),
+        Some(value @ (serde_json::Value::Number(_) | serde_json::Value::String(_))) => {
+            id_from_value(&value).ok_or_else(|| D::Error::custom(format!("Cannot parse stream_id: {}", value)))
+        }
         _ => Err(D::Error::custom("stream_id must be String or Number")),
     }
 }
 
+/// Numéro de flux tiré d'une valeur (nombre ou texte). Un entier écrit en nombre à virgule (`1.0`,
+/// `1e3`) est le même numéro ; un vrai nombre à virgule est refusé : on ne devine pas un numéro.
+/// Même règle pour la lecture d'un élément et pour l'actualisation (`catalog_refresh.rs`, numéro
+/// d'un élément illisible dont la ligne est gardée).
+pub fn id_from_value(value: &serde_json::Value) -> Option<i64> {
+    let whole = |f: f64| Some(f).filter(|f| f.fract() == 0.0 && f.abs() < 9.0e15).map(|f| f as i64);
+    match value {
+        serde_json::Value::Number(n) => n.as_i64().or_else(|| n.as_f64().and_then(whole)),
+        serde_json::Value::String(s) => {
+            let s = s.trim();
+            s.parse::<i64>().ok().or_else(|| s.parse::<f64>().ok().filter(|f| f.is_finite()).and_then(whole))
+        }
+        _ => None,
+    }
+}
+
+thread_local! {
+    /// Vrai si un champ secondaire de forme inattendue a été ignoré depuis la dernière lecture
+    /// (`take_odd_field`) : l'actualisation garde alors la ligne en place au lieu d'effacer une bonne
+    /// valeur sur un hoquet du fournisseur.
+    static ODD_FIELD: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// Lit et remet à zéro la marque « champ de forme inattendue ignoré » de ce fil d'exécution.
+pub fn take_odd_field() -> bool {
+    ODD_FIELD.with(|odd| odd.replace(false))
+}
+
 /// Texte facultatif envoyé tantôt en texte, tantôt en nombre selon le fournisseur (`"rating": 7.5`
 /// au lieu de `"7.5"`) : un nombre ou un booléen devient son texte, au lieu de rendre l'élément
-/// illisible. Un objet ou un tableau reste une erreur : l'élément est vraiment mal formé.
+/// illisible. Un objet ou un tableau reste une erreur : réservé au nom, sans lequel l'élément est
+/// vraiment mal formé (une actualisation garde alors la ligne en place au lieu d'effacer son nom).
 fn deserialize_opt_text<'de, D>(deserializer: D) -> Result<Option<String>, D::Error>
 where
     D: serde::Deserializer<'de>,
@@ -108,6 +133,26 @@ where
         Some(serde_json::Value::Bool(b)) => Ok(Some(b.to_string())),
         _ => Err(D::Error::custom("expected a text, a number or null")),
     }
+}
+
+/// Champ secondaire (affiche, catégorie, date, note, extension, guide) : même lecture, mais un objet
+/// ou un tableau (forme inattendue) est ignoré comme un champ absent, et le titre reste visible.
+/// Avant, il était jeté, et au-delà de 1 % de titres jetés toute la liste était refusée.
+fn deserialize_opt_extra<'de, D>(deserializer: D) -> Result<Option<String>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    Ok(match deserialize_scalar(deserializer)? {
+        Some(serde_json::Value::String(s)) => Some(s),
+        Some(serde_json::Value::Number(n)) => Some(n.to_string()),
+        Some(serde_json::Value::Bool(b)) => Some(b.to_string()),
+        Some(_) => None,
+        // tableau ou objet sautés sans être construits
+        None => {
+            ODD_FIELD.with(|odd| odd.set(true));
+            None
+        }
+    })
 }
 
 /// Numéro TMDB ou de catégorie gardé tel quel (texte ou nombre, lu ensuite par `normalize_tmdb` et
@@ -188,6 +233,53 @@ pub fn item_text(raw: &serde_json::value::RawValue) -> Option<&str> {
     Some(raw.get()).filter(|text| text.len() <= MAX_ITEM_BYTES && text.starts_with('{'))
 }
 
+/// Longueur maximale des avertissements PHP cherchés avant une liste (quelques lignes en vrai).
+pub const MAX_PHP_NOTICE_BYTES: usize = 64 * 1024;
+
+/// Longueur des avertissements PHP placés avant le JSON par de vieux panneaux
+/// (`<br /><b>Deprecated</b>: … <br />[{…}]`), 0 s'il n'y en a pas. Une vraie page web (Cloudflare,
+/// maintenance) n'est jamais sautée : son début contient `<html`, `<body`, `<!doctype`… Même règle
+/// que la page (`xtreamApi.ts`, `jsonAfterPhpNotice`).
+pub fn php_notice_len(prefix: &[u8]) -> usize {
+    let window = &prefix[..prefix.len().min(MAX_PHP_NOTICE_BYTES)];
+    let Some(first) = window.iter().position(|b| !b.is_ascii_whitespace()) else { return 0 };
+    if window[first] != b'<' {
+        return 0;
+    }
+    let start = window.windows(2).enumerate().find_map(|(i, w)| {
+        if w[0] != b'[' && w[0] != b'{' {
+            return None;
+        }
+        // Premier caractère utile après `[` ou `{` : début d'un élément, d'une clé, ou liste vide
+        let next = window[i + 1..].iter().find(|b| !b.is_ascii_whitespace())?;
+        matches!(next, b'"' | b'{' | b'[' | b']' | b'}').then_some(i)
+    });
+    let Some(start) = start else { return 0 };
+    let before = String::from_utf8_lossy(&window[..start]).to_ascii_lowercase();
+    let is_page = ["<!doctype", "<html", "<head", "<body", "<script", "<style"]
+        .iter()
+        .any(|tag| before.contains(tag));
+    if is_page { 0 } else { start }
+}
+
+/// Flux d'une liste débarrassé des avertissements PHP qui la précèdent (`php_notice_len`).
+pub fn skip_php_notice<R: std::io::Read>(mut reader: R) -> std::io::Result<std::io::Chain<std::io::Cursor<Vec<u8>>, R>> {
+    let mut head = vec![0u8; MAX_PHP_NOTICE_BYTES];
+    let mut filled = 0;
+    while filled < head.len() {
+        match reader.read(&mut head[filled..]) {
+            Ok(0) => break,
+            Ok(n) => filled += n,
+            Err(e) if e.kind() == std::io::ErrorKind::Interrupted => continue,
+            Err(e) => return Err(e),
+        }
+    }
+    head.truncate(filled);
+    let skip = php_notice_len(&head);
+    head.drain(..skip);
+    Ok(std::io::Read::chain(std::io::Cursor::new(head), reader))
+}
+
 /// Liste lue avec tolérance : les éléments lisibles et le nombre d'éléments illisibles écartés.
 #[derive(Debug)]
 pub struct LenientList<T> {
@@ -229,6 +321,8 @@ pub fn unreadable_tolerated(skipped: usize, total: usize) -> bool {
 /// refuser toute la liste, et la section restait vide ou figée tant que le fournisseur ne
 /// corrigeait pas.
 pub fn parse_list_lenient<T: ListItem>(bytes: &[u8]) -> Result<LenientList<T>, ListError> {
+    // Avertissements PHP avant la liste (vieux panneaux) : sautés
+    let bytes = &bytes[php_notice_len(bytes)..];
     // Éléments lus sur place, sans copie
     read_lenient::<T, _, &serde_json::value::RawValue>(&mut serde_json::Deserializer::from_slice(bytes), T::MAX_ITEMS)
 }
@@ -249,7 +343,8 @@ where
 {
     use serde::Deserializer as _;
     let too_many = std::cell::Cell::new(false);
-    let result = de.deserialize_seq(LenientVisitor::<T, H> { max_items, too_many: &too_many, item: std::marker::PhantomData });
+    // `deserialize_any` : une liste envoyée comme objet à clés numériques est lue aussi (visit_map)
+    let result = de.deserialize_any(LenientVisitor::<T, H> { max_items, too_many: &too_many, item: std::marker::PhantomData });
     if too_many.get() {
         return Err(ListError::TooManyItems { limit: max_items });
     }
@@ -295,6 +390,53 @@ where
         }
         Ok(list)
     }
+
+    /// Liste envoyée comme objet (`{"0":{…},"7":{…}}`) : PHP écrit ainsi un tableau dont des
+    /// éléments ont été retirés. Les éléments sont lus dans l'ordre reçu, comme une liste.
+    fn visit_map<A: serde::de::MapAccess<'de>>(self, mut map: A) -> Result<Self::Value, A::Error> {
+        use serde::de::Error as _;
+        let mut list = LenientList { items: Vec::new(), skipped: 0 };
+        while let Some(key) = map.next_key::<NumericKey>()? {
+            if key.0.is_none() {
+                return Err(A::Error::custom(NOT_A_LIST));
+            }
+            let raw = map.next_value::<H>()?;
+            if list.items.len() + list.skipped >= self.max_items {
+                self.too_many.set(true);
+                return Err(A::Error::custom("too many items"));
+            }
+            match read_item::<T>(&raw) {
+                Some(item) => list.items.push(item),
+                None => list.skipped += 1,
+            }
+        }
+        Ok(list)
+    }
+}
+
+/// Erreur d'un objet qui n'est pas une liste écrite en objet (réponse d'erreur du fournisseur,
+/// comme `{"user_info":{"auth":0}}`) : illisible, comme avant.
+pub const NOT_A_LIST: &str = "an object that is not a list";
+
+/// Clé d'un objet lu comme une liste : `Some` seulement pour un numéro (`"0"`, `"12"`), seule forme
+/// qu'écrit PHP pour un tableau. Toute autre clé dit une vraie réponse en objet, pas une liste.
+pub struct NumericKey(pub Option<u64>);
+
+impl<'de> Deserialize<'de> for NumericKey {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        struct KeyVisitor;
+        impl serde::de::Visitor<'_> for KeyVisitor {
+            type Value = NumericKey;
+            fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+                f.write_str("a key")
+            }
+            fn visit_str<E>(self, v: &str) -> Result<Self::Value, E> {
+                let numeric = !v.is_empty() && v.len() <= 19 && v.bytes().all(|b| b.is_ascii_digit());
+                Ok(NumericKey(if numeric { v.parse().ok() } else { None }))
+            }
+        }
+        deserializer.deserialize_str(KeyVisitor)
+    }
 }
 
 // =============================================================================
@@ -308,18 +450,18 @@ pub struct XtreamMovie {
     pub stream_id: i64,
     #[serde(default, deserialize_with = "deserialize_opt_text")]
     pub name: Option<String>,
-    #[serde(default, deserialize_with = "deserialize_opt_text")]
+    #[serde(default, deserialize_with = "deserialize_opt_extra")]
     pub stream_icon: Option<String>,
-    #[serde(default, deserialize_with = "deserialize_opt_text")]
+    #[serde(default, deserialize_with = "deserialize_opt_extra")]
     pub category_id: Option<String>,
     /// TMDB ID - peut être String ou Number selon le provider
     #[serde(default, deserialize_with = "deserialize_opt_loose_id")]
     pub tmdb: Option<serde_json::Value>,
-    #[serde(default, deserialize_with = "deserialize_opt_text")]
+    #[serde(default, deserialize_with = "deserialize_opt_extra")]
     pub added: Option<String>,
-    #[serde(default, deserialize_with = "deserialize_opt_text")]
+    #[serde(default, deserialize_with = "deserialize_opt_extra")]
     pub rating: Option<String>,
-    #[serde(default, deserialize_with = "deserialize_opt_text")]
+    #[serde(default, deserialize_with = "deserialize_opt_extra")]
     pub container_extension: Option<String>,
 }
 
@@ -330,16 +472,16 @@ pub struct XtreamSeries {
     pub series_id: i64,
     #[serde(default, deserialize_with = "deserialize_opt_text")]
     pub name: Option<String>,
-    #[serde(default, deserialize_with = "deserialize_opt_text")]
+    #[serde(default, deserialize_with = "deserialize_opt_extra")]
     pub cover: Option<String>,
-    #[serde(default, deserialize_with = "deserialize_opt_text")]
+    #[serde(default, deserialize_with = "deserialize_opt_extra")]
     pub category_id: Option<String>,
     /// TMDB ID - peut être String ou Number selon le provider
     #[serde(default, alias = "tmdb", deserialize_with = "deserialize_opt_loose_id")]
     pub tmdb_id: Option<serde_json::Value>,
-    #[serde(default, deserialize_with = "deserialize_opt_text")]
+    #[serde(default, deserialize_with = "deserialize_opt_extra")]
     pub last_modified: Option<String>,
-    #[serde(default, deserialize_with = "deserialize_opt_text")]
+    #[serde(default, deserialize_with = "deserialize_opt_extra")]
     pub rating: Option<String>,
 }
 
@@ -350,11 +492,11 @@ pub struct XtreamLive {
     pub stream_id: i64,
     #[serde(default, deserialize_with = "deserialize_opt_text")]
     pub name: Option<String>,
-    #[serde(default, deserialize_with = "deserialize_opt_text")]
+    #[serde(default, deserialize_with = "deserialize_opt_extra")]
     pub stream_icon: Option<String>,
-    #[serde(default, deserialize_with = "deserialize_opt_text")]
+    #[serde(default, deserialize_with = "deserialize_opt_extra")]
     pub category_id: Option<String>,
-    #[serde(default, deserialize_with = "deserialize_opt_text")]
+    #[serde(default, deserialize_with = "deserialize_opt_extra")]
     pub epg_channel_id: Option<String>,
 }
 
@@ -635,7 +777,10 @@ fn clean_display_name_for_ui(name: &str) -> String {
     cleaned = re_paren.replace_all(&cleaned, " ").to_string();
     cleaned = re_broken.replace(&cleaned, "").to_string();
     cleaned = re_space.replace_all(&cleaned, " ").to_string();
-    cleaned.trim().to_string()
+    let cleaned = cleaned.trim();
+    // Nom fait seulement d'étiquettes (« [FR] », « (HD) ») : gardé tel quel plutôt que vide (carte
+    // sans nom, introuvable dans la recherche)
+    if cleaned.is_empty() { name.trim().to_string() } else { cleaned.to_string() }
 }
 
 /// Ligne de la table `live` (même rôle que `MovieRow`) : nom nettoyé pour l'affichage et pays
@@ -747,6 +892,53 @@ pub fn insert_categories(
 mod tests {
     use super::*;
 
+    /// Un champ secondaire de forme inattendue (liste, objet) est ignoré : le titre reste dans la
+    /// liste (le nom, lui, reste exigé : une actualisation garde la ligne au lieu d'effacer son nom).
+    /// Avant, il était jeté, et au-delà de 1 % de titres jetés toute la liste était refusée
+    /// (films, séries ou chaînes tous invisibles).
+    #[test]
+    fn an_odd_secondary_field_never_hides_the_title() {
+        let movies = br#"[{"stream_id":1,"name":"Dune","stream_icon":{},"category_id":[3],"added":[],"rating":{"v":7},"container_extension":["mkv"],"tmdb":{}},
+                          {"stream_id":2,"name":"Arrival"}]"#;
+        let list = parse_list_lenient::<XtreamMovie>(movies).unwrap();
+        assert_eq!(list.skipped, 0);
+        assert_eq!(
+            movie_row(&list.items[0]),
+            MovieRow { id: 1, tmdb_id: None, name: "Dune".to_string(), icon: None, category_id: None, added: None, rating: None, container_extension: None }
+        );
+        let series = br#"[{"series_id":5,"name":"Dark","cover":[],"category_id":{"id":1},"last_modified":[1],"rating":[]}]"#;
+        let list = parse_list_lenient::<XtreamSeries>(series).unwrap();
+        assert_eq!((list.items.len(), list.skipped), (1, 0));
+        assert_eq!(series_row(&list.items[0]).name, "Dark");
+        let live = br#"[{"stream_id":9,"name":"TF1","stream_icon":[],"category_id":{},"epg_channel_id":["tf1.fr"]}]"#;
+        let list = parse_list_lenient::<XtreamLive>(live).unwrap();
+        assert_eq!((list.items.len(), list.skipped), (1, 0));
+        assert_eq!(live_row(&list.items[0]).name, "TF1");
+    }
+
+    /// Numéro envoyé en nombre à virgule mais entier (`1.0`, `1e3`) : lu comme l'entier ; un vrai
+    /// nombre à virgule reste refusé (on ne devine pas un numéro de flux).
+    #[test]
+    fn a_whole_number_written_as_a_float_is_a_valid_id() {
+        let list = parse_list_lenient::<XtreamMovie>(br#"[{"stream_id":1.0},{"stream_id":1e3},{"stream_id":"12.0"}]"#).unwrap();
+        assert_eq!(list.items.iter().map(|m| m.stream_id).collect::<Vec<_>>(), [1, 1000, 12]);
+        let mut items: Vec<String> = (1..=200).map(|i| format!(r#"{{"stream_id":{}}}"#, i)).collect();
+        items.push(r#"{"stream_id":1.5}"#.to_string());
+        let list = parse_list_lenient::<XtreamMovie>(format!("[{}]", items.join(",")).as_bytes()).unwrap();
+        assert_eq!(list.skipped, 1);
+    }
+
+    /// Nom de chaîne fait seulement d'étiquettes : le nettoyage ne doit pas le vider (carte sans
+    /// nom, introuvable dans la recherche) ; le nom d'origine est gardé.
+    #[test]
+    fn a_channel_name_made_only_of_tags_is_kept() {
+        assert_eq!(clean_display_name_for_ui("[FR]"), "[FR]");
+        assert_eq!(clean_display_name_for_ui("  |UK|  "), "|UK|");
+        assert_eq!(clean_display_name_for_ui("(HD)"), "(HD)");
+        assert_eq!(clean_display_name_for_ui("FR| TF1 HD"), "TF1 HD");
+        assert_eq!(clean_display_name_for_ui(""), "");
+    }
+
     #[test]
     fn test_normalize_tmdb_number() {
         let val = Some(serde_json::Value::Number(serde_json::Number::from(12345)));
@@ -800,6 +992,21 @@ mod tests {
         assert_eq!(names, vec!["Films", "2024", ""]);
     }
 
+    /// Fournisseur sans aucun numéro TMDB dans ses listes, note en nombre (relevé sur de vrais
+    /// fournisseurs) : chaque film et chaque série est lu, sans numéro TMDB
+    #[test]
+    fn provider_lists_without_tmdb_and_with_numeric_ratings_are_read() {
+        let movies = br#"[{"num":1,"name":"Film A","stream_type":"movie","stream_id":11,"stream_icon":"http://x/a.jpg","rating":7.4,"rating_5based":3.7,"added":"1700000000","category_id":"5","container_extension":"mkv"},
+                          {"num":2,"name":"Film B","stream_id":12,"rating":0,"category_id":"5","container_extension":"mp4"}]"#;
+        let list = parse_list_lenient::<XtreamMovie>(movies).unwrap();
+        assert_eq!((list.items.len(), list.skipped), (2, 0));
+        assert!(list.items.iter().all(|m| movie_row(m).tmdb_id.is_none()));
+        let series = br#"[{"num":1,"name":"Serie A","series_id":21,"cover":"http://x/s.jpg","rating":8,"rating_5based":4,"last_modified":"1700000000","category_id":"7"}]"#;
+        let list = parse_list_lenient::<XtreamSeries>(series).unwrap();
+        assert_eq!((list.items.len(), list.skipped), (1, 0));
+        assert!(series_row(&list.items[0]).tmdb_id.is_none());
+    }
+
     #[test]
     fn lenient_list_keeps_the_readable_items_up_to_one_percent() {
         let mut items: Vec<String> = (1..=100).map(|i| format!(r#"{{"stream_id":{}}}"#, i)).collect();
@@ -820,6 +1027,50 @@ mod tests {
             Err(ListError::Unreadable(_))
         ));
         assert!(matches!(parse_list_lenient::<XtreamLive>(br#"[{"stream_id":1},"#), Err(ListError::Unreadable(_))));
+    }
+
+    /// Liste envoyée comme objet à clés numériques (PHP, éléments filtrés) : lue comme une liste, dans
+    /// l'ordre reçu ; un objet à autres clés (réponse d'erreur) reste illisible, donc retenté.
+    #[test]
+    fn a_list_sent_as_an_object_with_numeric_keys_is_read() {
+        let body = br#"{"0":{"stream_id":5,"name":"A"},"7":{"stream_id":"9","name":"B"}}"#;
+        let list = parse_list_lenient::<XtreamLive>(body).unwrap();
+        let ids: Vec<i64> = list.items.iter().map(|l| l.stream_id).collect();
+        assert_eq!((ids, list.skipped), (vec![5, 9], 0));
+        let cats = read_list_lenient::<XtreamCategory, _>(&br#"{"3":{"category_id":"3","category_name":"Films"}}"#[..]).unwrap();
+        assert_eq!(cats.items.len(), 1);
+        // Objet vide : liste vide, comme `[]`
+        assert_eq!(parse_list_lenient::<XtreamLive>(b"{}").unwrap().items.len(), 0);
+        for not_a_list in [&br#"{"user_info":{"auth":0}}"#[..], br#"{"0":{"stream_id":1},"error":"x"}"#, br#"{"-1":{"stream_id":1}}"#] {
+            assert!(matches!(parse_list_lenient::<XtreamLive>(not_a_list), Err(ListError::Unreadable(_))), "{:?}", std::str::from_utf8(not_a_list));
+        }
+        // Le plafond d'éléments vaut aussi pour la forme objet
+        let many = format!("{{{}}}", (0..60_001).map(|i| format!(r#""{}":{{"category_id":"{}"}}"#, i, i)).collect::<Vec<_>>().join(","));
+        assert!(matches!(parse_list_lenient::<XtreamCategory>(many.as_bytes()), Err(ListError::TooManyItems { .. })));
+    }
+
+    /// Avertissements PHP avant la liste (vieux panneaux) : sautés ; une vraie page web jamais.
+    #[test]
+    fn php_notices_before_a_list_are_skipped_but_never_a_web_page() {
+        let notice = "<br />\n<b>Deprecated</b>:  Function create_function() is deprecated in <b>/home/xtreamcodes/wwwdir/player_api.php</b> on line <b>12</b><br />\n";
+        let body = format!("{}[{{\"stream_id\":1,\"name\":\"A\"}}]", notice);
+        assert_eq!(parse_list_lenient::<XtreamLive>(body.as_bytes()).unwrap().items.len(), 1);
+        let empty = format!("{}[]", notice);
+        assert_eq!(parse_list_lenient::<XtreamLive>(empty.as_bytes()).unwrap().items.len(), 0);
+        let streamed = skip_php_notice(body.as_bytes()).unwrap();
+        assert_eq!(read_list_lenient::<XtreamLive, _>(streamed).unwrap().items.len(), 1);
+        // Page Cloudflare ou de maintenance contenant du JSON : jamais lue comme une liste
+        for page in [
+            r#"<!DOCTYPE html><html><head><script>var a=[{"stream_id":1}]</script></head></html>"#,
+            r#"<html><body>[{"stream_id":1}]</body></html>"#,
+            r#"<br /><style>p{"x"}</style>[{"stream_id":1}]"#,
+        ] {
+            assert_eq!(php_notice_len(page.as_bytes()), 0, "{}", page);
+            assert!(parse_list_lenient::<XtreamLive>(page.as_bytes()).is_err(), "{}", page);
+        }
+        // Réponse ordinaire : rien n'est sauté
+        assert_eq!(php_notice_len(br#"  [{"stream_id":1}]"#), 0);
+        assert_eq!(php_notice_len(b""), 0);
     }
 
     /// Liste de `n` éléments `0` (2 octets chacun) : illisibles, mais sous la borne en octets.
@@ -956,13 +1207,14 @@ mod tests {
     #[test]
     fn items_are_read_exactly_as_before() {
         // Relevé fait sur l'ancienne lecture (valeur générique puis type) avant la lecture directe :
-        // chaque cas limite donne la même ligne, ou reste illisible (seul écart voulu : un élément
-        // qui n'est pas un objet, lu avant par position s'il était un tableau)
+        // chaque cas limite donne la même ligne, ou reste illisible. Écarts voulus : un élément qui
+        // n'est pas un objet (lu avant par position s'il était un tableau) ; un champ secondaire (pas le nom)
+        // en tableau ou en objet, ignoré au lieu de jeter le titre ; un numéro entier écrit 1.0 ou 1e3
         let expected = [
             r##"MovieRow { id: 1, tmdb_id: None, name: "", icon: None, category_id: None, added: None, rating: None, container_extension: None }"##,
             r##"MovieRow { id: 7, tmdb_id: None, name: "", icon: None, category_id: None, added: None, rating: None, container_extension: None }"##,
-            r##"illisible"##,
-            r##"illisible"##,
+            r##"MovieRow { id: 1, tmdb_id: None, name: "", icon: None, category_id: None, added: None, rating: None, container_extension: None }"##, // 1.0 : entier écrit en nombre à virgule (illisible avant)
+            r##"MovieRow { id: 1000, tmdb_id: None, name: "", icon: None, category_id: None, added: None, rating: None, container_extension: None }"##, // 1e3 (illisible avant)
             r##"illisible"##,
             r##"MovieRow { id: -5, tmdb_id: None, name: "", icon: None, category_id: None, added: None, rating: None, container_extension: None }"##,
             r##"illisible"##,

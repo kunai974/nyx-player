@@ -16,7 +16,8 @@ export interface XtreamUserInfo {
   username: string;
   password: string;
   message: string;
-  auth: 0 | 1;
+  /** Nombre ou texte selon le panneau (« 0 » = refusé) */
+  auth: 0 | 1 | '0' | '1';
   status: string;
   exp_date: string;
   is_trial: string;

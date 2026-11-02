@@ -226,6 +226,58 @@ describe('useMpvObserver : états du flux', () => {
       expect(onNext).toHaveBeenCalledTimes(1);
     });
 
+    it('pause pendant le décompte : il s\'arrête, puis reprend à la reprise de la lecture', async () => {
+      const onNext = vi.fn().mockResolvedValue(undefined);
+      const { result } = await mount(series(NEXT), onNext);
+      emit('duration', 100);
+      emit('time-pos', 90);
+      act(() => { vi.advanceTimersByTime(3000); });
+      expect(result.current.bingeCountdown).toBe(7);
+
+      emit('pause', true);
+      act(() => { vi.advanceTimersByTime(60_000); });
+      expect(result.current.bingeCountdown).toBe(7);
+      expect(result.current.showBingePopup).toBe(true);
+      expect(onNext).not.toHaveBeenCalled();
+
+      emit('pause', false);
+      act(() => { vi.advanceTimersByTime(6000); });
+      expect(result.current.bingeCountdown).toBe(1);
+      expect(onNext).not.toHaveBeenCalled();
+      act(() => { vi.advanceTimersByTime(1000); });
+      expect(result.current.showBingePopup).toBe(false);
+      expect(onNext).toHaveBeenCalledTimes(1);
+    });
+
+    it('fenêtre ouverte alors que la lecture est déjà en pause : le décompte attend la reprise', async () => {
+      const onNext = vi.fn().mockResolvedValue(undefined);
+      const { result } = await mount(series(NEXT), onNext);
+      emit('duration', 100);
+      emit('pause', true);
+      emit('time-pos', 92);
+      expect(result.current.showBingePopup).toBe(true);
+      act(() => { vi.advanceTimersByTime(30_000); });
+      expect(result.current.bingeCountdown).toBe(10);
+      expect(onNext).not.toHaveBeenCalled();
+      emit('pause', false);
+      act(() => { vi.advanceTimersByTime(10_000); });
+      expect(onNext).toHaveBeenCalledTimes(1);
+    });
+
+    it('Annuler pendant la pause, puis reprise : le décompte ne repart pas', async () => {
+      const onNext = vi.fn();
+      const { result } = await mount(series(NEXT), onNext);
+      emit('duration', 100);
+      emit('time-pos', 90);
+      emit('pause', true);
+      act(() => { result.current.handleBingeCancel(); });
+      emit('pause', false);
+      emit('pause', false);
+      act(() => { vi.advanceTimersByTime(20_000); });
+      expect(result.current.showBingePopup).toBe(false);
+      expect(onNext).not.toHaveBeenCalled();
+    });
+
     it('Annuler : plus de décompte, et la fenêtre ne revient pas pour cet épisode', async () => {
       const onNext = vi.fn();
       const { result } = await mount(series(NEXT), onNext);

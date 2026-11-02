@@ -69,3 +69,14 @@ describe('networkService — isProviderServerError', () => {
     expect(isProviderServerError(undefined)).toBe(false);
   });
 });
+
+describe('isProviderCertificateError', () => {
+  it('certificat refusé : reconnu, et ce n’est pas « serveur injoignable »', async () => {
+    const { isProviderCertificateError, isProviderServerError } = await import('../networkService');
+    const error = 'provider_certificate_error: error sending request: invalid peer certificate: Expired';
+    expect(isProviderCertificateError(error)).toBe(true);
+    expect(isProviderCertificateError(new Error(error))).toBe(true);
+    expect(isProviderServerError(error)).toBe(false);
+    expect(isProviderCertificateError('provider_unreachable: operation timed out')).toBe(false);
+  });
+});

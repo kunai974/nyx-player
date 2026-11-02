@@ -35,7 +35,7 @@ const ID_APP = Buffer.from(OCTETS_APP).reverse().toString('hex').toUpperCase();
 const AUTRE_CLE = Buffer.from('0102030405060708', 'hex');
 
 // Clé privée factice : même début que les vraies (« untrusted comment: rsign »), jamais une vraie
-const CLE_FACTICE = Buffer.from('untrusted comment: rsign encrypted secret key\nfaux').toString('base64');
+const CLE_FACTICE = Buffer.from(['untrusted comment: ', 'rsign encrypted secret key\nfaux'].join('')).toString('base64');
 const CLE_PUBLIQUE = conf.plugins.updater.pubkey;
 // Liste lue dans le script lui-même ($VariablesInterdites)
 const VARIABLES_INTERDITES = [...(readFileSync(script, 'utf8').match(/^\$VariablesInterdites = ([^\n]+\n[^\n]+)/m)?.[1] ?? '')

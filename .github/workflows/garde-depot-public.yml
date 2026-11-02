@@ -1,0 +1,52 @@
+# Garde du dépôt public : refuse toute PR vers `main` qui ajoute un fichier interne (liste :
+# scripts/public/interdits.txt), un secret ou un lien vers un document de travail privé.
+# Dépôt public `kunai974/nyx-player` seulement : sur l'atelier privé la tâche est écartée (0 minute).
+#
+# `pull_request_target` : le workflow et le script exécutés sont ceux de `main`, qu'une PR ne peut pas
+# modifier pour se laisser passer. Le code de la PR n'est JAMAIS récupéré dans le dossier de travail ni
+# exécuté : seuls ses objets git sont téléchargés, puis lus par `git diff`.
+# À rendre obligatoire dans le ruleset de `main` (« Require status checks ») : voir docs/DEPOT_PUBLIC.md.
+name: Garde du dépôt public
+
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened]
+    branches: [main]
+
+concurrency:
+  group: garde-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions: {}
+
+jobs:
+  garde:
+    name: Fichiers internes et secrets
+    if: github.repository == 'kunai974/nyx-player'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      # Sans `ref` : la branche de base (`main`), jamais la PR.
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version: 20
+          package-manager-cache: false
+      - name: Télécharger les objets de la PR (sans les extraire)
+        env:
+          NUMERO: ${{ github.event.pull_request.number }}
+          TETE: ${{ github.event.pull_request.head.sha }}
+        run: |
+          git fetch --no-tags --quiet origin "refs/pull/${NUMERO}/head:refs/garde/pr"
+          # Une poussée plus récente a eu lieu : ce passage est périmé, le suivant jugera le bon commit.
+          test "$(git rev-parse refs/garde/pr)" = "$TETE"
+      - name: Contrôler ce que la PR ajoute
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+          TETE: ${{ github.event.pull_request.head.sha }}
+        run: node scripts/public/garde-depot-public.mjs --base "$BASE" --tete "$TETE"

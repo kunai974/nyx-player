@@ -26,12 +26,18 @@ export function cardHasWatchlist(item: CarouselItem): boolean {
 }
 
 /**
- * Ajoute ou retire la carte de Ma liste. Avec un numéro TMDB : par le service (le cache TMDB donne le nom officiel),
- * nouvel état rendu (null : échec, déjà signalé). Sinon l'ancien rappel de la carte, état inconnu (null).
+ * Ajoute ou retire la carte de Ma liste. Avec un numéro TMDB ou de source et un type : par le service, nouvel état
+ * rendu (null : échec, déjà signalé). Un titre sans numéro TMDB passe aussi par le service, sous son numéro de
+ * source : sinon le bouton s'affichait sans rien faire chez un fournisseur qui ne relie pas ses titres à TMDB.
+ * Sans numéro : l'ancien rappel de la carte, état inconnu (null).
  */
 export async function toggleCardWatchlist(item: CarouselItem): Promise<boolean | null> {
-    if (item.tmdbId !== undefined && item.tmdbId > 0 && item.mediaType) {
-        return toggleWatchlistOrNotify(item.streamId || 0, item.tmdbId, item.mediaType);
+    const tmdbId = item.tmdbId !== undefined && item.tmdbId > 0 ? item.tmdbId : 0;
+    const hasStreamId = item.streamId !== undefined && item.streamId > 0;
+    if (item.mediaType && (tmdbId > 0 || hasStreamId)) {
+        // Avec un numéro TMDB, le numéro de source part tel quel : un titre « Introuvable » de Ma liste garde son
+        // numéro provisoire négatif s'il est retiré puis remis avant que sa rangée se recharge.
+        return toggleWatchlistOrNotify(item.streamId ?? 0, tmdbId, item.mediaType);
     }
     item.onAddToList?.();
     return null;

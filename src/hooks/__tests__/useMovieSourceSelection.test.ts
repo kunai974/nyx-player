@@ -230,4 +230,28 @@ describe('useMovieSourceSelection', () => {
     // Pas de persist car une seule version
     expect(setPreferredSource).not.toHaveBeenCalled();
   });
+
+  // Film sans numéro TMDB déjà dans Ma liste : le bouton de la fiche restait sur « + »
+  it('watchlist : sans numéro TMDB, état lu par le numéro de source de la première version', async () => {
+    const { isInWatchlist } = await import('../../services/watchlistHydration');
+    vi.mocked(isInWatchlist).mockResolvedValueOnce(true);
+    const { result } = renderHook(() =>
+      useMovieSourceSelection({
+        initialVersions: [v1],
+        resolvedTmdbId: 0,
+      }),
+    );
+    await waitFor(() => {
+      expect(result.current.inWatchlist).toBe(true);
+    });
+    expect(isInWatchlist).toHaveBeenCalledWith(100, 0, 'movie');
+  });
+
+  it('watchlist : avec numéro TMDB, état lu par ce numéro', async () => {
+    const { isInWatchlist } = await import('../../services/watchlistHydration');
+    renderHook(() => useMovieSourceSelection({ initialVersions: [v1], resolvedTmdbId: 42 }));
+    await waitFor(() => {
+      expect(isInWatchlist).toHaveBeenCalledWith(0, 42, 'movie');
+    });
+  });
 });

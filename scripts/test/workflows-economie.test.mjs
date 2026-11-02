@@ -13,8 +13,8 @@ import path from 'node:path';
 
 const dir = fileURLToPath(new URL('../../.github/workflows/', import.meta.url));
 const tous = readdirSync(dir).filter((f) => f.endsWith('.yml') || f.endsWith('.yaml'));
-// La recette de publication a ses propres règles (plus bas) : une étiquette de version, dépôt public seul.
-const workflows = tous.filter((f) => f !== 'release.yml');
+// La recette de publication et la garde du dépôt public ont leurs propres règles (plus bas).
+const workflows = tous.filter((f) => f !== 'release.yml' && f !== 'garde-depot-public.yml');
 
 // Bloc `on:` du workflow (jusqu'à la prochaine clé de premier niveau)
 function triggers(text) {
@@ -85,6 +85,38 @@ describe('workflows GitHub : pas de passage automatique', () => {
       expect(group[1]).toContain("github.event.label.name != 'ci-github'");
     });
   }
+});
+
+describe('garde-depot-public.yml : contrôle des PR du dépôt public', () => {
+  const text = readFileSync(path.join(dir, 'garde-depot-public.yml'), 'utf8').replace(/\r\n/g, '\n');
+  const taches = jobs(text);
+
+  it('ne part que des PR vers main, et ne tourne jamais sur l\'atelier privé', () => {
+    const on = triggers(text).split('\n').filter((l) => l.trim() && !l.startsWith('#')).join('\n');
+    expect(on).toBe('  pull_request_target:\n    types: [opened, synchronize, reopened]\n    branches: [main]');
+    for (const job of taches) expect(job.text, job.name).toMatch(/^ {4}if: github\.repository == 'kunai974\/nyx-player'$/m);
+  });
+
+  it('lit la PR sans jamais la sortir dans le dossier de travail ni l\'exécuter', () => {
+    // pull_request_target donne des droits : l'extraction de la PR (ref = tête de PR) serait une faille
+    expect(text).not.toMatch(/^\s+ref:/m);
+    // Le commit jugé est lu par son empreinte (variable d'environnement), jamais par un nom de branche
+    expect(text).not.toMatch(/head\.ref|head\.repo/);
+    expect(text).not.toMatch(/pnpm|npm (ci|install)|cargo|gradlew/);
+    expect(text).toMatch(/refs\/pull\/\$\{NUMERO\}\/head:refs\/garde\/pr/);
+    expect(text).toMatch(/test "\$\(git rev-parse refs\/garde\/pr\)" = "\$TETE"/);
+    expect(text).toMatch(/persist-credentials: false/);
+  });
+
+  it('aucun droit par défaut, lecture seule, aucun secret, actions épinglées', () => {
+    expect(text).toMatch(/^permissions: \{\}$/m);
+    expect(text).not.toMatch(/: write|secrets\./);
+    for (const [, action] of text.matchAll(/uses: (\S+)/g)) expect(action).toMatch(/@[0-9a-f]{40}$/);
+  });
+
+  it('aucune donnée de la PR n\'est écrite directement dans une commande (injection)', () => {
+    expect(text.split('\n').filter((l) => /^\s+(run:|git |test |node |#)/.test(l) && !l.trim().startsWith('#')).join('\n')).not.toMatch(/\$\{\{/);
+  });
 });
 
 describe('release.yml : publication, dépôt public seulement', () => {

@@ -44,6 +44,7 @@ vi.mock('../../services/storage', () => ({
 }));
 vi.mock('../../services/xtreamApi', () => ({
     XtreamApiService: class {
+        preferredLiveExtension() { return undefined; }
         getStreamUrl(type: string, id: number, ext?: string) { return `http://test.invalid/${type}/${id}.${ext ?? 'defaut'}`; }
     },
 }));

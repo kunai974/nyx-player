@@ -25,7 +25,8 @@ import type { PlayableItem } from '../../../types/player';
 import type { AppSeriesInfo, XtreamEpisode } from '../../../types/xtream';
 
 const getStreamUrl = vi.fn((type: string, id: number, ext?: string) => `http://test.invalid/${type}/${id}.${ext ?? 'defaut'}`);
-const api = { getStreamUrl } as unknown as XtreamApiService;
+const preferredLiveExtension = vi.fn((): 'm3u8' | undefined => undefined);
+const api = { getStreamUrl, preferredLiveExtension } as unknown as XtreamApiService;
 const item = (fields: Record<string, unknown>) => fields as unknown as PlayableItem;
 
 const episode = (id: string, num: number) => ({ id, episode_num: num, container_extension: 'mkv' }) as unknown as XtreamEpisode;
@@ -37,7 +38,19 @@ const series = {
 } as unknown as AppSeriesInfo;
 
 describe('buildStreamUrl', () => {
-    beforeEach(() => { getStreamUrl.mockClear(); });
+    beforeEach(() => { getStreamUrl.mockClear(); preferredLiveExtension.mockReset(); preferredLiveExtension.mockReturnValue(undefined); });
+
+    it('compte qui n\'autorise que le HLS : chaîne demandée en m3u8', () => {
+        preferredLiveExtension.mockReturnValueOnce('m3u8');
+        expect(buildStreamUrl(item({ stream_id: 3, stream_type: 'live' }), api))
+            .toEqual({ url: 'http://test.invalid/live/3.m3u8', container: 'm3u8', live: true });
+    });
+
+    it('format écrit par le fournisseur sur la chaîne : il l\'emporte sur celui du compte', () => {
+        preferredLiveExtension.mockReturnValue('m3u8');
+        expect(buildStreamUrl(item({ stream_id: 3, stream_type: 'live', container_extension: 'ts' }), api)?.url)
+            .toBe('http://test.invalid/live/3.ts');
+    });
 
     it('chaîne en direct sans format : live, format laissé à l\'API, conteneur ts', () => {
         expect(buildStreamUrl(item({ stream_id: 3, stream_type: 'live' }), api))
@@ -194,6 +207,16 @@ describe('resolveCurrentEpisodeInfo', () => {
     it('épisode de la série : saison et numéro', () => {
         expect(resolveCurrentEpisodeInfo(series, item({ id: '102' }))).toEqual({ season: 1, episodeNum: 2 });
         expect(resolveCurrentEpisodeInfo(series, item({ id: '301' }))).toEqual({ season: 3, episodeNum: 7 });
+    });
+
+    // Des fournisseurs écrivent le numéro d'épisode en nombre dans get_series_info
+    it('numéro d\'épisode en nombre chez le fournisseur : épisode retrouvé', () => {
+        const numeric = {
+            ...series,
+            episodes: { 1: [{ id: 101, episode_num: 1 }, { id: 102, episode_num: 2 }] },
+        } as unknown as AppSeriesInfo;
+        expect(resolveCurrentEpisodeInfo(numeric, item({ id: 102 }))).toEqual({ season: 1, episodeNum: 2 });
+        expect(resolveCurrentEpisodeInfo(numeric, item({ id: '102' }))).toEqual({ season: 1, episodeNum: 2 });
     });
 
     it('pas de série, rien en lecture, film ou épisode inconnu : null', () => {

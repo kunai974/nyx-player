@@ -10,10 +10,10 @@ import React, { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { XtreamCredentials } from '../../types/iptv';
 import NyxButton from '../Common/NyxButton';
-import { readM3uParam } from '../../utils/xtreamCredentials';
+import { readM3uParam, splitPastedXtreamAddress } from '../../utils/xtreamCredentials';
 import { normalizeProviderHost } from '../../utils/providerHost';
-import { isProviderServerError } from '../../services/networkService';
-import { isCredentialsRejectedError, isProviderHtmlResponseError } from '../../services/xtreamApi';
+import { isProviderCertificateError, isProviderServerError } from '../../services/networkService';
+import { isCredentialsRejectedError, isProviderAccountInactiveError, isProviderHtmlResponseError } from '../../services/xtreamApi';
 
 // ============================================================================
 // TYPES
@@ -78,12 +78,17 @@ const SourceForm: React.FC<SourceFormProps> = ({
                 return;
             }
         } else {
-            if (!editHost.trim() || !editUsername || !editPassword) {
+            // Adresse complète collée (`…/player_api.php?username=…`) : le serveur seul, et les
+            // identifiants qu'elle contient pour les champs laissés vides
+            const pasted = splitPastedXtreamAddress(editHost);
+            const user = editUsername || pasted.username;
+            const pass = editPassword || pasted.password;
+            if (!pasted.host.trim() || !user || !pass) {
                 setFormError(t('error_missing_fields'));
                 return;
             }
             // Adresse nettoyée : le même serveur écrit autrement n'est pas un autre fournisseur
-            newCreds = { host: normalizeProviderHost(editHost), username: editUsername, password: editPassword };
+            newCreds = { host: normalizeProviderHost(pasted.host), username: user, password: pass };
         }
 
         setIsSaving(true);
@@ -94,7 +99,9 @@ const SourceForm: React.FC<SourceFormProps> = ({
             // Identifiants refusés, serveur du fournisseur en panne ou injoignable, autre échec
             if (isCredentialsRejectedError(error)) setFormError(t('error_credentials_rejected'));
             else if (isProviderServerError(error)) setFormError(t('auth:error_provider_unavailable'));
+            else if (isProviderCertificateError(error)) setFormError(t('auth:error_provider_certificate'));
             else if (isProviderHtmlResponseError(error)) setFormError(t('auth:error_provider_html'));
+            else if (isProviderAccountInactiveError(error)) setFormError(t('auth:error_provider_account_inactive'));
             else setFormError(t('error_credentials'));
         } finally {
             setIsSaving(false);

@@ -285,7 +285,16 @@ impl Row {
     }
 }
 
-fn convert(kind: Kind, text: &str) -> Result<Row, serde_json::Error> {
+/// Ligne d'un élément, et vrai si un champ secondaire de forme inattendue y a été ignoré
+/// (`take_odd_field`).
+fn convert(kind: Kind, text: &str) -> Result<(Row, bool), serde_json::Error> {
+    crate::catalog_parser::take_odd_field();
+    let row = convert_row(kind, text);
+    let odd = crate::catalog_parser::take_odd_field();
+    row.map(|row| (row, odd))
+}
+
+fn convert_row(kind: Kind, text: &str) -> Result<Row, serde_json::Error> {
     Ok(match kind {
         Kind::Movies => {
             let r = movie_row(&serde_json::from_str::<XtreamMovie>(text)?);
@@ -332,11 +341,7 @@ fn convert(kind: Kind, text: &str) -> Result<Row, serde_json::Error> {
 /// Numéro d'un élément illisible, s'il se lit au moins lui (nombre ou texte)
 fn value_id(kind: Kind, text: &str) -> Option<i64> {
     let value: serde_json::Value = serde_json::from_str(text).ok()?;
-    match value.get(kind.id_field())? {
-        serde_json::Value::Number(n) => n.as_i64(),
-        serde_json::Value::String(s) => s.trim().parse::<i64>().ok(),
-        _ => None,
-    }
+    crate::catalog_parser::id_from_value(value.get(kind.id_field())?)
 }
 
 // Lecture tolérante des valeurs de la base (une valeur d'un ancien format donne simplement une
@@ -408,11 +413,16 @@ fn open_list_reader(path: &Path) -> Result<Box<dyn Read>, String> {
     let n = file.read(&mut magic).map_err(|e| format!("read list: {}", e.kind()))?;
     let file = std::fs::File::open(path).map_err(|e| format!("open list: {}", e.kind()))?;
     let reader = BufReader::with_capacity(64 * 1024, file);
-    if n == 2 && magic == [0x1f, 0x8b] {
-        Ok(Box::new(BufReader::with_capacity(64 * 1024, flate2::read::GzDecoder::new(reader))))
+    let reader: Box<dyn Read> = if n == 2 && magic == [0x1f, 0x8b] {
+        Box::new(BufReader::with_capacity(64 * 1024, flate2::read::GzDecoder::new(reader)))
     } else {
-        Ok(Box::new(reader))
-    }
+        Box::new(reader)
+    };
+    // Avertissements PHP avant la liste (vieux panneaux) : sautés, même règle que la connexion
+    crate::catalog_parser::skip_php_notice(reader)
+        // Tampon autour de l'enveloppe : serde lit octet par octet, sans appel indirect à chaque fois
+        .map(|r| Box::new(BufReader::with_capacity(64 * 1024, r)) as Box<dyn Read>)
+        .map_err(|e| format!("read list: {}", e.kind()))
 }
 
 struct SeqVisitor<'f, F> {
@@ -454,6 +464,29 @@ where
         }
         Ok(index)
     }
+
+    /// Liste envoyée comme objet à clés numériques (`{"0":{…},"7":{…}}`) : lue comme une liste,
+    /// même règle que la connexion (`catalog_parser`). Un objet à autres clés reste illisible.
+    fn visit_map<A: serde::de::MapAccess<'de>>(self, mut map: A) -> Result<Self::Value, A::Error> {
+        use serde::de::Error as _;
+        let mut index = 0;
+        while let Some(key) = map.next_key::<crate::catalog_parser::NumericKey>()? {
+            if key.0.is_none() {
+                return Err(A::Error::custom(crate::catalog_parser::NOT_A_LIST));
+            }
+            let raw = map.next_value::<Box<serde_json::value::RawValue>>()?;
+            if index >= self.max_items {
+                *self.early_exit = Some(ApplyError::Failed(format!("more than {} items", self.max_items)));
+                return Err(A::Error::custom("stopped"));
+            }
+            if let Err(e) = (self.on_item)(index, item_text(&raw)) {
+                *self.early_exit = Some(e);
+                return Err(A::Error::custom("stopped"));
+            }
+            index += 1;
+        }
+        Ok(index)
+    }
 }
 
 /// Parcourt une liste JSON élément par élément. Une réponse qui n'est pas une liste (réponse
@@ -474,7 +507,8 @@ where
     };
     let mut de = serde_json::Deserializer::from_reader(reader);
     let mut early_exit: Option<ApplyError> = None;
-    let result = (&mut de).deserialize_seq(SeqVisitor { on_item: &mut on_item, max_items, early_exit: &mut early_exit });
+    // `deserialize_any` : une liste envoyée comme objet à clés numériques est lue aussi (visit_map)
+    let result = (&mut de).deserialize_any(SeqVisitor { on_item: &mut on_item, max_items, early_exit: &mut early_exit });
     if let Some(e) = early_exit {
         return Err(e);
     }
@@ -781,7 +815,7 @@ pub fn apply_list_file(
             }
         }
         match item.map(|text| convert(kind, text)) {
-            Some(Ok(row)) => {
+            Some(Ok((row, _))) => {
                 if let Some(t) = row.tmdb {
                     tmdb_items += 1;
                     received_tmdb.insert(t);
@@ -845,12 +879,18 @@ pub fn apply_list_file(
                 std::thread::sleep(std::time::Duration::from_millis(PAUSE_WHILE_READING_MS));
             }
         }
-        let row = match item.map(|text| convert(kind, text)) {
-            Some(Ok(row)) => row,
+        let (row, odd) = match item.map(|text| convert(kind, text)) {
+            Some(Ok(converted)) => converted,
             _ => return Ok(()),
         };
         // Doublons : seule la dernière occurrence compte, à sa position, comme l'écriture complète
         if last_pos.get(&row.id) != Some(&index) {
+            return Ok(());
+        }
+        // Champ secondaire de forme inattendue (affiche, catégorie… en liste ou en objet) sur un titre
+        // déjà en base : ligne gardée telle quelle, sans effacer une bonne valeur sur un hoquet du
+        // fournisseur (un titre nouveau, lui, est ajouté sans ce champ)
+        if odd && snapshot.rows.remove(&row.id).is_some() {
             return Ok(());
         }
         let sort = index as i64;

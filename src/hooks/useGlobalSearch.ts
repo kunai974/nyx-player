@@ -115,8 +115,9 @@ export const useGlobalSearch = (
 
       // Step 3: Group by TMDB ID
       const tGroup0 = performance.now();
-      const groupedMovies = groupByTmdbId(movies);
-      const groupedSeries = groupByTmdbId(series);
+      // Titres sans numéro TMDB gardés seulement si aucun titre de ce type n'en a (même règle que l'accueil).
+      const groupedMovies = groupByTmdbId(movies, lightIndexes.moviesByTmdb.size === 0);
+      const groupedSeries = groupByTmdbId(series, lightIndexes.seriesByTmdb.size === 0);
       devLog('perf', `groupByTmdbId: ${(performance.now() - tGroup0).toFixed(1)}ms`);
 
       // Step 4: Limit to max `limit` groups per type (for UI performance)

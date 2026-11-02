@@ -19,69 +19,53 @@ export interface GroupedItem<T> {
 // ============ TMDB GROUPING (Instant, O(n)) ============
 
 /**
- * Groupe les items par TMDB ID (instant, O(n)).
- * 
- * COMPORTEMENT CRITIQUE:
- * - Seuls les items avec un TMDB ID valide (> 0) sont inclus
- * - Les items sans TMDB ID sont EXCLUS (pas d'orphelins)
- * - Utilise normalizeTmdbId() pour gérer les cas string "0", null, undefined
- * 
- * @template T - Type d'item avec propriété tmdb optionnelle
- * @param items - Liste d'items à grouper
- * @returns Liste de groupes avec representative, items[], sourceCount
- * 
+ * Groupe les items par TMDB ID (instant, O(n)), dans l'ordre où ils arrivent (rang de la recherche).
+ *
+ * - Les versions d'un même titre (même numéro TMDB) forment un seul groupe (`tmdb_<id>`).
+ * - Un titre sans numéro TMDB forme son propre groupe (`item_<id>`) quand `keepOrphans` est vrai :
+ *   chez un fournisseur qui ne donne aucun numéro TMDB dans ses listes, la recherche ne trouverait
+ *   sinon aucun film ni aucune série alors que tout le catalogue est chargé. Quand le catalogue a des
+ *   titres reliés à TMDB, les titres sans numéro restent écartés (catégories techniques, doublons),
+ *   comme sur l'accueil.
+ * - Utilise normalizeTmdbId() pour gérer les cas string "0", null, undefined.
+ *
  * @example
- * // Items avec même TMDB ID → groupés ensemble
  * groupByTmdbId([
  *   { name: "Film (4K)", tmdb: 12345 },
+ *   { name: "Sans fiche", tmdb: 0, stream_id: 7 },
  *   { name: "Film (HD)", tmdb: 12345 },
- *   { name: "Film (SD)", tmdb: 12345 },
  * ])
- * // → [{ representative: first, items: all3, sourceCount: 3 }]
- * 
- * @example
- * // Items sans TMDB → EXCLUS
- * groupByTmdbId([
- *   { name: "Film sans TMDB", tmdb: 0 },
- *   { name: "Autre", tmdb: undefined },
- * ])
- * // → [] (vide!)
- * 
- * ANTI-HALLUCINATION:
- * ⚠️ Cette fonction EXCLUT les orphelins par design (qualité Nyx Player)
- * ⚠️ Pour inclure les orphelins, créer une fonction séparée
+ * // → [{ groupKey: "tmdb_12345", sourceCount: 2 }, { groupKey: "item_7", sourceCount: 1 }]
  */
 export function groupByTmdbId<T extends { tmdb?: number | string; tmdbId?: number; stream_id?: number | string; id?: number }>(
-  items: T[]
+  items: T[],
+  keepOrphans = false
 ): GroupedItem<T>[] {
-  const tmdbGroups = new Map<number, T[]>();
-  // orphans removed: we intentionally hide items without TMDB ID
+  const groups = new Map<string, T[]>();
 
-  for (const item of items) {
+  items.forEach((item, index) => {
     // Support both tmdb (IptvStream) and tmdbId (LightMovie/LightSeries)
     const rawTmdb = 'tmdbId' in item ? item.tmdbId : item.tmdb;
     const tmdbId = normalizeTmdbId(rawTmdb);
-
-    if (hasValidTmdbId(tmdbId)) {
-      if (!tmdbGroups.has(tmdbId)) tmdbGroups.set(tmdbId, []);
-      tmdbGroups.get(tmdbId)!.push(item);
-    }
-  }
+    if (!hasValidTmdbId(tmdbId) && !keepOrphans) return;
+    const ownId = item.id ?? item.stream_id;
+    const key = hasValidTmdbId(tmdbId)
+      ? `tmdb_${tmdbId}`
+      : `item_${ownId !== undefined && ownId !== null && ownId !== '' ? ownId : `index_${index}`}`;
+    const group = groups.get(key);
+    if (group) group.push(item);
+    else groups.set(key, [item]);
+  });
 
   const result: GroupedItem<T>[] = [];
-
-  // TMDB groups
-  for (const [tmdbId, group] of tmdbGroups) {
+  for (const [groupKey, group] of groups) {
     result.push({
       representative: group[0],
       items: group,
       sourceCount: group.length,
-      groupKey: `tmdb_${tmdbId}`,
+      groupKey,
     });
   }
-
-  // Orphans are intentionally excluded per "Nyx Player" quality standards
-
   return result;
 }
 

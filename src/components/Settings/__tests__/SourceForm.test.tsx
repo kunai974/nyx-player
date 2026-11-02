@@ -93,6 +93,32 @@ describe('SourceForm — mode Xtream Codes', () => {
     expect(button('save')).not.toBeDisabled();
   });
 
+  it('certificat https refusé : message dédié, pas « serveur injoignable »', async () => {
+    onCredentialsChange.mockRejectedValueOnce('provider_certificate_error: invalid peer certificate: UnknownIssuer');
+    renderForm();
+    await act(async () => { fireEvent.click(screen.getByText('save')); });
+    expect(screen.getByText('auth:error_provider_certificate')).toBeInTheDocument();
+    expect(screen.queryByText('auth:error_provider_unavailable')).toBeNull();
+  });
+
+  it('abonnement expiré ou suspendu chez le fournisseur : message dédié, formulaire gardé ouvert', async () => {
+    onCredentialsChange.mockRejectedValueOnce(new Error('provider_account_inactive'));
+    renderForm();
+    await act(async () => { fireEvent.click(screen.getByText('save')); });
+    expect(screen.getByText('auth:error_provider_account_inactive')).toBeInTheDocument();
+    expect(screen.queryByText('error_credentials')).toBeNull();
+    expect(onEditingChange).not.toHaveBeenCalled();
+  });
+
+  it('adresse player_api.php complète collée, identifiants vidés : serveur et identifiants en sont tirés', async () => {
+    renderForm();
+    type(inputs()[0], 'http://autre.invalid:8080/player_api.php?username=paul&password=autre-factice');
+    type(inputs()[1], '');
+    type(inputs()[2], '');
+    await act(async () => { fireEvent.click(screen.getByText('save')); });
+    expect(onCredentialsChange).toHaveBeenCalledWith({ host: 'http://autre.invalid:8080', username: 'paul', password: 'autre-factice' });
+  });
+
   it('autre échec (enregistrement local, erreur inconnue) : message générique, pas « mot de passe refusé »', async () => {
     onCredentialsChange.mockRejectedValueOnce(new Error('database is locked'));
     renderForm();

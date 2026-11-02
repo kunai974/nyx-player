@@ -25,6 +25,8 @@ const catalog = [movie(1, 'The Matrix', 603), movie(2, 'The Mask', 854), movie(3
 
 const indexes = {
   movies: new Map(catalog.map((m) => [m.id, m])),
+  moviesByTmdb: new Map(catalog.map((m) => [m.tmdbId, [m.id]])),
+  seriesByTmdb: new Map(),
   series: new Map(),
   live: new Map(),
   iconPrefixes: [],
@@ -94,5 +96,51 @@ describe('useGlobalSearch — attente et filtrage immédiat', () => {
     expect(result.current.results.movies).toHaveLength(2);
     await act(async () => { await vi.advanceTimersByTimeAsync(350); });
     expect(result.current.results.movies).toHaveLength(2);
+  });
+});
+
+// Fournisseur qui ne donne aucun numéro TMDB dans ses listes : la recherche ne trouvait aucun titre
+describe('useGlobalSearch — titres sans numéro TMDB', () => {
+  const sansTmdb = [movie(11, 'Le Grand Bleu', 0), movie(12, 'Le Grand Restaurant', 0)];
+  const sansTmdbIndexes = {
+    movies: new Map(sansTmdb.map((m) => [m.id, m])),
+    moviesByTmdb: new Map(),
+    seriesByTmdb: new Map(),
+    series: new Map(),
+    live: new Map(),
+    iconPrefixes: [],
+  } as unknown as LightIndexes;
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    searchContent.mockReset();
+    searchContent.mockImplementation(async (q: string) =>
+      sansTmdb.filter((m) => matchesSearch(m.name, q)).map((m) => ({ id: m.id, name: m.name, type: 'movie' })));
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('les films sans numéro TMDB sont trouvés', async () => {
+    const { result } = renderHook(() => useGlobalSearch(sansTmdbIndexes, 'grand'));
+    await act(async () => { await vi.advanceTimersByTimeAsync(350); });
+    expect(result.current.results.movies.map((g) => g.representative.name)).toEqual(['Le Grand Bleu', 'Le Grand Restaurant']);
+  });
+
+  it('catalogue relié à TMDB : un titre sans numéro reste hors des résultats', async () => {
+    const mixte = [movie(21, 'Le Grand Bleu', 0), movie(22, 'Le Grand Restaurant', 9876)];
+    searchContent.mockImplementation(async (q: string) =>
+      mixte.filter((m) => matchesSearch(m.name, q)).map((m) => ({ id: m.id, name: m.name, type: 'movie' })));
+    const mixteIndexes = {
+      movies: new Map(mixte.map((m) => [m.id, m])),
+      moviesByTmdb: new Map([[9876, [22]]]),
+      seriesByTmdb: new Map(),
+      series: new Map(),
+      live: new Map(),
+      iconPrefixes: [],
+    } as unknown as LightIndexes;
+    const { result } = renderHook(() => useGlobalSearch(mixteIndexes, 'grand'));
+    await act(async () => { await vi.advanceTimersByTimeAsync(350); });
+    expect(result.current.results.movies.map((g) => g.representative.name)).toEqual(['Le Grand Restaurant']);
   });
 });

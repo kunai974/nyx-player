@@ -467,6 +467,41 @@ fn truncated_error_or_mostly_unreadable_lists_write_nothing() {
     assert_eq!(tables(&conn), before);
 }
 
+/// Liste envoyée comme objet à clés numériques, ou précédée d'avertissements PHP (compressée ou non) :
+/// l'actualisation écrit la même chose qu'avec la liste ordinaire.
+#[test]
+fn a_list_as_an_object_or_after_php_notices_is_refreshed_like_a_plain_list() {
+    let mut expected = db();
+    apply(&mut expected, Kind::Movies, &ten_movies(), Mode::Manual);
+
+    // Écrit à la main : l'ordre reçu est gardé (un `serde_json::Map` trierait les clés)
+    let entries: Vec<String> =
+        ten_movies().iter().enumerate().map(|(i, m)| format!("\"{}\":{}", i * 3, m)).collect();
+    let object_file = write_raw(format!("{{{}}}", entries.join(",")).as_bytes());
+    let notice = "<br />\n<b>Deprecated</b>: x in <b>/wwwdir/player_api.php</b><br />\n";
+    let notice_file = write_raw(format!("{}{}", notice, serde_json::to_string(&ten_movies()).unwrap()).as_bytes());
+    let gz_path = temp_path();
+    let mut enc = flate2::write::GzEncoder::new(std::fs::File::create(&gz_path).unwrap(), flate2::Compression::default());
+    enc.write_all(format!("{}{}", notice, serde_json::to_string(&ten_movies()).unwrap()).as_bytes()).unwrap();
+    enc.finish().unwrap();
+    let gz_file = TempList(gz_path);
+
+    for file in [&object_file, &notice_file, &gz_file] {
+        let mut conn = db();
+        apply_list_file(&mut conn, Kind::Movies, &file.0, Mode::Manual, HOST, &never).unwrap();
+        assert_eq!(tables(&conn), tables(&expected));
+    }
+
+    // Page web contenant du JSON : toujours un échec, rien n'est écrit
+    let mut conn = db();
+    apply(&mut conn, Kind::Movies, &ten_movies(), Mode::Auto);
+    let before = tables(&conn);
+    let page = write_raw(br#"<!DOCTYPE html><html><body>[{"stream_id":1,"name":"x"}]</body></html>"#);
+    let err = apply_list_file(&mut conn, Kind::Movies, &page.0, Mode::Manual, HOST, &never).unwrap_err();
+    assert!(matches!(err, ApplyError::Failed(_)));
+    assert_eq!(tables(&conn), before);
+}
+
 #[test]
 fn a_list_over_the_item_cap_writes_nothing() {
     // Même plafond d'éléments que la connexion, lisibles ou non
@@ -922,4 +957,37 @@ fn full_load_then_refresh_keep_tmdb_cache_and_watchlist() {
             (40, Some(104)),
         ]
     );
+}
+
+#[test]
+fn an_odd_secondary_field_keeps_the_existing_row_untouched() {
+    // Hoquet du fournisseur : affiche et catégorie en liste vide pour le film 7. Lu (le titre reste
+    // visible à la connexion), mais la ligne en place garde ses bonnes valeurs au lieu de les perdre.
+    let mut conn = db();
+    let mut items: Vec<Value> = (1..=10).map(|i| movie(i, &format!("Film {}", i), Some(i))).collect();
+    apply(&mut conn, Kind::Movies, &items, Mode::Auto);
+    items[6]["stream_icon"] = json!([]);
+    items[6]["category_id"] = json!({});
+    // Nouveau film arrivé avec un champ de forme inattendue : ajouté sans ce champ
+    let mut new_one = movie(11, "Film 11", Some(11));
+    new_one["stream_icon"] = json!([]);
+    items.push(new_one);
+    let s = apply(&mut conn, Kind::Movies, &items, Mode::Manual);
+    assert_eq!(s.skipped_items, 0);
+    assert_eq!((s.removed, s.changed, s.added), (0, 0, 1));
+    assert_eq!(count(&conn, "SELECT COUNT(*) FROM movies WHERE id = 7 AND icon = 'http://img/7.jpg' AND category_id = '10'"), 1);
+    assert_eq!(count(&conn, "SELECT COUNT(*) FROM movies WHERE id = 11 AND icon IS NULL AND category_id = '10'"), 1);
+}
+
+#[test]
+fn an_unreadable_item_with_a_float_id_keeps_its_row() {
+    // Numéro écrit 7.0 sur un élément illisible (nom en objet) : sa ligne est gardée, comme avec 7
+    let mut conn = db();
+    let mut items: Vec<Value> = (1..=200).map(|i| movie(i, &format!("Film {}", i), Some(i))).collect();
+    apply(&mut conn, Kind::Movies, &items, Mode::Auto);
+    items[6]["stream_id"] = json!(7.0);
+    items[6]["name"] = json!({ "fr": "Film 7" });
+    let s = apply(&mut conn, Kind::Movies, &items, Mode::Manual);
+    assert_eq!((s.skipped_items, s.removed), (1, 0));
+    assert_eq!(count(&conn, "SELECT COUNT(*) FROM movies WHERE id = 7"), 1);
 }

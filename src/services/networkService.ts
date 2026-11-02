@@ -44,3 +44,15 @@ export function isProviderHttpServerError(error: unknown): boolean {
   const message = error instanceof Error ? error.message : String(error);
   return message.startsWith(PROVIDER_SERVER_ERROR) && !/\bHTTP 429\b/.test(message);
 }
+
+/** Début de l'erreur rendue par `iptv_fetch` quand le certificat https du fournisseur est refusé (Rust, `ingestion.rs`). */
+const PROVIDER_CERTIFICATE_ERROR = 'provider_certificate_error';
+
+/**
+ * Vrai si le certificat https du fournisseur a été refusé (expiré, signé par lui-même, autre nom) :
+ * la page le dit au lieu de « le serveur ne répond pas ». La vérification n'est jamais désactivée.
+ */
+export function isProviderCertificateError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return message.startsWith(PROVIDER_CERTIFICATE_ERROR);
+}

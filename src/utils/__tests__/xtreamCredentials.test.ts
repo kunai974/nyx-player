@@ -3,7 +3,7 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { encodeXtreamPathSegment, readM3uParam, safeContainerExtension } from '../xtreamCredentials';
+import { encodeXtreamPathSegment, readM3uParam, safeContainerExtension, splitPastedXtreamAddress } from '../xtreamCredentials';
 
 describe('encodeXtreamPathSegment', () => {
   it('laisse inchangé un identifiant ordinaire (adresses existantes identiques)', () => {
@@ -54,5 +54,42 @@ describe('safeContainerExtension', () => {
     for (const ext of ['mkv/../x', 'ts?a=b', 'ts#x', 'm k v', '', '.', '..mkv', 'abcdefghi', '/mkv', null, undefined, 3]) {
       expect(safeContainerExtension(ext)).toBeUndefined();
     }
+  });
+});
+
+describe('splitPastedXtreamAddress : adresse complète collée dans le champ « serveur »', () => {
+  it('adresse ordinaire : rendue telle quelle', () => {
+    expect(splitPastedXtreamAddress('http://x.example:8080')).toEqual({ host: 'http://x.example:8080', username: '', password: '' });
+    expect(splitPastedXtreamAddress('http://x.example/iptv/')).toEqual({ host: 'http://x.example/iptv/', username: '', password: '' });
+  });
+
+  it('adresse player_api.php avec identifiants : le serveur seul, et les identifiants', () => {
+    expect(splitPastedXtreamAddress(' http://x.example:8080/player_api.php?username=jean&password=ab+cd%26 ')).toEqual({
+      host: 'http://x.example:8080',
+      username: 'jean',
+      password: 'ab+cd&',
+    });
+  });
+
+  it('lien get.php : le serveur seul, et les identifiants', () => {
+    expect(splitPastedXtreamAddress('https://x.example/get.php?username=u&password=p&type=m3u_plus&output=ts')).toEqual({
+      host: 'https://x.example',
+      username: 'u',
+      password: 'p',
+    });
+  });
+
+  it('sans schéma, fichier en majuscules, sous-dossier gardé', () => {
+    expect(splitPastedXtreamAddress('x.example:25461/sub/PLAYER_API.PHP')).toEqual({ host: 'x.example:25461/sub', username: '', password: '' });
+  });
+
+  it('xmltv.php, panel_api.php, ancre : le serveur seul', () => {
+    expect(splitPastedXtreamAddress('http://x.example:8080/xmltv.php?username=u&password=p').host).toBe('http://x.example:8080');
+    expect(splitPastedXtreamAddress('http://x.example/panel_api.php').host).toBe('http://x.example');
+    expect(splitPastedXtreamAddress('http://x.example/player_api.php#haut')).toEqual({ host: 'http://x.example', username: '', password: '' });
+  });
+
+  it('autre fichier .php : rendu tel quel', () => {
+    expect(splitPastedXtreamAddress('http://x.example/index.php').host).toBe('http://x.example/index.php');
   });
 });
