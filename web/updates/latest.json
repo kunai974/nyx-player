@@ -1,11 +1,11 @@
 {
-  "version": "0.8.0",
-  "notes": "Nyx Player is now on Android, Android TV and Chromecast. Smoother TV guide and home screen, more reliable playback and sync across devices, automatic source refresh every 12 hours, security hardening and a new website.",
-  "pub_date": "2026-11-01T15:10:20Z",
+  "version": "0.8.1",
+  "notes": "Movies and series now show for providers without TMDB links (Home and Search), new Other row, works with more providers (clearer messages for expired subscriptions and refused certificates), next-episode countdown pauses with the video.",
+  "pub_date": "2026-11-02T22:47:17Z",
   "platforms": {
     "windows-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVSQU16ZkRPTlY0MjJLSmFhc3JSc3ZHbTFGVEM5WndlZ2N4N2E4eXZJMC9WT0haVkNMbVBoNEVSbTU4S0prOUZvVXppUWtJSTBsTEd6K3k1L1NseDNKd1BwcmJkeEdvSUE4PQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkzNTQ1NzkxCWZpbGU6Tnl4IFBsYXllcl8wLjguMF94NjQtc2V0dXAuZXhlCkhYbnE2cEhvRGpzY2tFRVZ5dlFBeE40SHJtVmhGWGVzOUhmZ243b09tVDVwL0RXTy83S1UvR0RpSVNmc1VNVjMyVWgzb29NdmNOR2FOWjY3eVRnQUJBPT0K",
-      "url": "https://releases.nyxplayer.app/Nyx-Player_0.8.0_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVSQU16ZkRPTlY0MjF4MEU2MVBLKzhoeGMxN0FEdklQMzRMY1BMNS9TKzlscUlJSXAyRHdNdFJ2Qmg3UFVvWEcrV3B1ZXRUS3FHUVV4anlGYVh6VWRhM1crYzZWdnBvandrPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkzNjU5NjAwCWZpbGU6Tnl4IFBsYXllcl8wLjguMV94NjQtc2V0dXAuZXhlCllBdmZTbHRmMXJSWFMwejBWQ3pySjdpc2t1WWJDY0ZOdGhMeUI5bUF1U2hhdWxPdmZjeEd0dThVdklVdFJsQ0o5ZzdnNm41dXJRTC93ejc2WnBrS0FRPT0K",
+      "url": "https://releases.nyxplayer.app/Nyx-Player_0.8.1_x64-setup.exe"
     }
   }
 }

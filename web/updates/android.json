@@ -1,16 +1,16 @@
 {
-  "version": "0.8.0",
-  "pub_date": "2026-11-01T15:10:20Z",
+  "version": "0.8.1",
+  "pub_date": "2026-11-02T22:47:17Z",
   "apks": {
     "arm64": {
-      "url": "https://releases.nyxplayer.app/nyx-player-arm64-v0.8.0.apk",
-      "sha256": "f912335b056c87c50615c181738bcedfd7531b87c36a68ddadbff6f7625971c8",
-      "size": 56543454
+      "url": "https://releases.nyxplayer.app/nyx-player-arm64-v0.8.1.apk",
+      "sha256": "90cd3a5d5a6e79bd2d837a569b546242c7203bbb3960268f12c1f30ca9390476",
+      "size": 56625374
     },
     "armv7": {
-      "url": "https://releases.nyxplayer.app/nyx-player-armv7-v0.8.0.apk",
-      "sha256": "7d804858f03625f8749ab14fb10e07be5730e6e18725a35e410f6af557ce932f",
-      "size": 46475508
+      "url": "https://releases.nyxplayer.app/nyx-player-armv7-v0.8.1.apk",
+      "sha256": "17c080b6cfd45e5e0d65a686c2f7fafcf1b32e2d634b3e852914d268cd750dd0",
+      "size": 46541044
     }
   }
 }

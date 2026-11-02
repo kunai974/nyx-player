@@ -47,11 +47,31 @@
     <h1 class="changelog__title">Changelog</h1>
     <p class="changelog__subtitle">All updates, fixes, and improvements to Nyx Player.</p>
 
+    <!-- v0.8.1 -->
+    <article class="changelog-entry">
+      <div class="changelog-entry__header">
+        <span class="changelog-entry__version">v0.8.1</span>
+        <span class="changelog-entry__badge changelog-entry__badge--latest">Latest</span>
+        <time class="changelog-entry__date" datetime="2026-11-02">November 2, 2026</time>
+      </div>
+      <div class="changelog-entry__body">
+        <div class="changelog-entry__section">
+          <h3 class="changelog-entry__section-title changelog-entry__section-title--fixed">Fixed</h3>
+          <ul class="changelog-entry__list">
+            <li><strong>Providers without TMDB links</strong> — Their movies and series now show on Home and in Search, with the provider's title and poster, and can be added to My list.</li>
+            <li><strong>Malformed details</strong> — A title whose details arrive malformed from the provider (poster, category, number) is no longer dropped.</li>
+            <li><strong>"Other" row</strong> — Titles filed under a category the provider does not list now appear in an "Other" row at the end of Home.</li>
+            <li><strong>Next episode</strong> — The current and next episodes are found again with providers that write episode numbers differently, and the countdown pauses with the video.</li>
+            <li><strong>More providers</strong> — Sign-in accepted by some providers that used to answer with a web page, clear messages for expired subscriptions and refused https certificates, pasted full addresses, and live channels in HLS when the account only allows it.</li>
+          </ul>
+        </div>
+      </div>
+    </article>
+
     <!-- v0.8.0 -->
     <article class="changelog-entry">
       <div class="changelog-entry__header">
         <span class="changelog-entry__version">v0.8.0</span>
-        <span class="changelog-entry__badge changelog-entry__badge--latest">Latest</span>
         <time class="changelog-entry__date" datetime="2026-11-01">November 1, 2026</time>
       </div>
       <div class="changelog-entry__body">
