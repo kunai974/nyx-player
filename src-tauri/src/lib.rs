@@ -18,6 +18,8 @@ mod memory;
 #[cfg(test)]
 mod migrations;
 mod mpv_guard;
+#[cfg(target_os = "macos")]
+mod mpv_macos;
 mod mpv_tls;
 mod navigation;
 mod playback;
@@ -117,7 +119,7 @@ pub fn run() {
                     .title("Nyx Player")
                     .inner_size(1280.0, 800.0)
                     .transparent(true)
-                    .visible(false)
+                    .visible(cfg!(target_os = "macos"))
                     .decorations(true)
                     .resizable(true);
 

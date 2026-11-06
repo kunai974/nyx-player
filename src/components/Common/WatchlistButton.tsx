@@ -66,7 +66,9 @@ const WatchlistButton: React.FC<WatchlistButtonProps> = ({
     <button
       className={classes}
       onClick={onClick}
-      title={title}
+      aria-label={title}
+      data-tip={size === 'md' ? title : undefined}
+      title={size === 'md' ? undefined : title}
       type="button"
       tabIndex={focusable === false ? -1 : undefined}
       data-testid={testId}

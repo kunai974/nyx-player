@@ -13,7 +13,7 @@ import type { XtreamMovie } from '../../types/xtream';
 const details = { id: 42, title: 'Film', images: { backdrops: [] } };
 
 vi.mock('../../services/tmdbApi', () => ({
-  default: { getMovieDetails: vi.fn() },
+  default: { getMovieDetails: vi.fn(), searchMovie: vi.fn(async () => ({ results: [] })) },
 }));
 
 vi.mock('../../services/tmdbCacheSqlite', () => ({
@@ -57,9 +57,9 @@ describe('useTmdbMovie', () => {
     await waitFor(() => expect(result.current.loadingState).toBe('ready'), { timeout: 2000 });
   });
 
-  it('bascule en fallback sans tmdb_id', () => {
+  it('bascule en fallback sans tmdb_id quand la recherche par titre ne trouve rien', async () => {
     const { result } = renderHook(() => useTmdbMovie({ ...movie, tmdb: 0 } as unknown as XtreamMovie));
-    expect(result.current.loadingState).toBe('fallback');
+    await waitFor(() => expect(result.current.loadingState).toBe('fallback'), { timeout: 2000 });
     expect(tmdb.getMovieDetails).not.toHaveBeenCalled();
   });
 

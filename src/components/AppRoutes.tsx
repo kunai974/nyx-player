@@ -10,6 +10,7 @@ import React from 'react';
 import ErrorBoundary from './Common/ErrorBoundary';
 import DashboardPage from '../pages/DashboardPage';
 import LiveTvPage from '../pages/LiveTvPage';
+import BrowseAllPage from '../pages/BrowseAllPage';
 // Pages secondaires chargées à la demande : App rend AppRoutes sous un <Suspense>
 import { SettingsPage, WatchlistPage, GlobalSearchPage, CategoryDetailPage } from './lazyPages';
 import type { IptvStream, IptvSeries } from '../types/iptv';
@@ -152,6 +153,22 @@ const AppRoutes: React.FC<AppRoutesProps> = ({
                 lightIndexes={lightIndexes}
             />
             </ErrorBoundary>
+        );
+    }
+
+    if ((activeTab === 'movies' || activeTab === 'series') && lightIndexes) {
+        return (
+            <div className="content-wrapper">
+                <ErrorBoundary context="Browse">
+                <BrowseAllPage
+                    key={activeTab}
+                    type={activeTab}
+                    lightIndexes={lightIndexes}
+                    onNavigateToContent={navigateToContent}
+                    onBack={() => onNavigateToTab?.('dashboard')}
+                />
+                </ErrorBoundary>
+            </div>
         );
     }
 

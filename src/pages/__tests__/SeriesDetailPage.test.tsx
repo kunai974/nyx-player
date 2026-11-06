@@ -29,6 +29,7 @@ vi.mock('../../services/tmdbApi', () => ({
   default: {
     getTvDetails: vi.fn(),
     getSeasonDetailsWithFallback: vi.fn(),
+    searchTv: vi.fn(async () => ({ results: [] })),
     imageUrl: () => null,
   },
 }));

@@ -8,6 +8,7 @@ import {
 import type { XtreamMovie } from '../types/xtream';
 import type { IptvStream } from '../types/iptv';
 import { normalizeTmdbId } from '../utils/normalizeTmdb';
+import { useTmdbIdFromTitle } from './useTmdbIdFromTitle';
 import { getTmdbLanguage } from '../utils/tmdbLanguage';
 import type { TmdbMovieDetails } from '../types/tmdb';
 import { TMDB_LANGUAGE_EVENT } from '../services/eventConstants';
@@ -35,20 +36,23 @@ export const useTmdbMovie = (baseItem: IptvStream | XtreamMovie | null, initialT
   // Ref to clear the transition timer on unmount (prevents memory leak)
   const transitionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Resolve TMDB ID from prop or baseItem (NO title matching - only provider ID)
-  const resolvedTmdbId = (() => {
+  // Provider id first (prop or baseItem); providers that send none: found by title search
+  const providerTmdbId = (() => {
     if (initialTmdbId && initialTmdbId > 0) return initialTmdbId;
     if (!baseItem) return 0;
-    // Only use tmdb field from provider, no search fallback
     return normalizeTmdbId((baseItem as XtreamMovie).tmdb);
   })();
+  const titleName = providerTmdbId === 0 ? ((baseItem as { name?: string } | null)?.name ?? null) : null;
+  const titleSearch = useTmdbIdFromTitle(titleName, 'movie');
+  const resolvedTmdbId = providerTmdbId || titleSearch.id;
+  const searchPending = providerTmdbId === 0 && !titleSearch.done;
 
   // Initialize details to null - SQLite cache is async, will be loaded in effect
   const [details, setDetails] = useState<TmdbMovieDetails | null>(null);
 
   // Loading state: if no tmdb_id → fallback immediately, else loading
   const [loadingState, setLoadingState] = useState<'loading' | 'ready' | 'fallback'>(() => {
-    if (resolvedTmdbId === 0) return 'fallback';
+    if (providerTmdbId === 0 && !titleName) return 'fallback';
     return 'loading';
   });
 
@@ -82,6 +86,8 @@ export const useTmdbMovie = (baseItem: IptvStream | XtreamMovie | null, initialT
   useEffect(() => {
     // No TMDB ID → stay in fallback, no fetch needed
     if (!resolvedTmdbId || resolvedTmdbId === 0) {
+      // Title search still running: keep the skeleton
+      if (searchPending) return;
       // eslint-disable-next-line react-hooks/set-state-in-effect -- pas d'identifiant TMDB : passage direct au repli (machine d'état du chargement)
       setLoadingState('fallback');
       return;
@@ -159,7 +165,7 @@ export const useTmdbMovie = (baseItem: IptvStream | XtreamMovie | null, initialT
       // Reset fetching flag au démontage pour permettre refetch au retour
       fetchingRef.current = null;
     };
-  }, [resolvedTmdbId, details, transitionToState, langVersion]);
+  }, [resolvedTmdbId, searchPending, details, transitionToState, langVersion]);
 
   // Clear pending transition timer on unmount / TMDB ID change only.
   // Must NOT live in the fetch effect above: its cleanup runs when `details` is set,

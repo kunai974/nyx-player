@@ -8,6 +8,7 @@ import {
 import type { AppSeriesInfo } from '../types/xtream';
 import type { IptvSeries } from '../types/iptv';
 import { normalizeTmdbId } from '../utils/normalizeTmdb';
+import { useTmdbIdFromTitle } from './useTmdbIdFromTitle';
 import { getTmdbLanguage } from '../utils/tmdbLanguage';
 import type { TmdbTvDetails, TmdbEpisode } from '../types/tmdb';
 import { TMDB_LANGUAGE_EVENT } from '../services/eventConstants';
@@ -73,6 +74,10 @@ export const useTmdbSeries = (
     return null;
   };
 
+  // Providers that send no TMDB id: found by title search
+  const seriesTitle = !getInitialTmdbId() ? ((series as { name?: string } | null)?.name ?? null) : null;
+  const titleSearch = useTmdbIdFromTitle(seriesTitle, 'tv');
+
   // 1. Init tmdbId synchronously from props
   const [tmdbId, setTmdbId] = useState<number | null>(() => getInitialTmdbId());
 
@@ -86,7 +91,7 @@ export const useTmdbSeries = (
   // 3. Init loadingState - fallback immediately if no TMDB ID (like useTmdbMovie)
   const [loadingState, setLoadingState] = useState<'loading' | 'ready' | 'fallback'>(() => {
     const id = getInitialTmdbId();
-    if (!id || id === 0) return 'fallback';
+    if ((!id || id === 0) && !seriesTitle) return 'fallback';
     return 'loading';
   });
 
@@ -130,10 +135,12 @@ export const useTmdbSeries = (
     }
 
     // Get ID from props (NO title matching - only provider ID)
-    const id = getInitialTmdbId();
+    const id = getInitialTmdbId() || titleSearch.id;
     
-    // No TMDB ID from provider → fallback immediately
+    // No TMDB ID from the provider nor from the title search → fallback
     if (!id || id === 0) {
+      // Title search still running: keep the skeleton
+      if (!titleSearch.done) return;
       transitionToState('fallback');
       return;
     }
@@ -200,7 +207,7 @@ export const useTmdbSeries = (
       }
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps -- recharge seulement pour une autre série ou une autre langue, pas à chaque nouvel état
-  }, [series?.series_id, langVersion]); // series_id is a stable unique identifier (name could be duplicated)
+  }, [series?.series_id, langVersion, titleSearch.id, titleSearch.done]); // series_id is a stable unique identifier (name could be duplicated)
 
   // =========================================================================
   // EFFECT 2: Fetch Season Details when tmdbId or selectedSeason changes

@@ -4,6 +4,8 @@ import { useTranslation } from 'react-i18next';
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { isInWatchlist, onWatchlistChange } from '../../services/watchlistHydration';
 import WatchlistButton from '../Common/WatchlistButton';
+import WelcomeSlideshow from './WelcomeSlideshow';
+import type { LatestBackdrop } from '../../hooks/useLatestBackdrops';
 
 // Re-export for backward compatibility
 export type { HeroMovie } from '../../types/dashboard';
@@ -37,6 +39,9 @@ interface HeroBannerProps<T = unknown> {
   onDotClick?: (index: number) => void;
   /** Bannière tenue (souris dessus, ou focus de la télécommande dedans) ou relâchée : pause de la rotation. */
   onHoldChange?: (held: boolean) => void;
+  /** Welcome slideshow (no featured title): is this title in the catalogue, and how to play it */
+  welcomeIsAvailable?: (slide: LatestBackdrop) => boolean;
+  onWelcomePlay?: (slide: LatestBackdrop) => void;
 }
 
 const HeroBanner = <T,>({
@@ -50,6 +55,8 @@ const HeroBanner = <T,>({
   currentIndex = 0,
   onDotClick,
   onHoldChange,
+  welcomeIsAvailable,
+  onWelcomePlay,
 }: HeroBannerProps<T>) => {
   const { t } = useTranslation(['dashboard', 'common']);
 
@@ -239,6 +246,7 @@ const HeroBanner = <T,>({
   if (!movie) {
     return (
       <div className="hero-banner fallback" data-nav-top data-testid="hero-banner-welcome">
+        <WelcomeSlideshow isAvailable={welcomeIsAvailable} onPlayTitle={onWelcomePlay} />
         <div className="hero-overlay">
           <div className="hero-content">
             <h1 className="hero-title">{t('hero_welcome_title')}</h1>

@@ -77,6 +77,168 @@
 .hero-banner.fallback {
   background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
   animation: none;
+  overflow: hidden;
+}
+
+/* Welcome screen: latest movies / shows crossfading behind the text */
+.welcome-slideshow {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+}
+
+.welcome-slide {
+  position: absolute;
+  inset: 0;
+  background-size: cover;
+  background-position: center top;
+  opacity: 0;
+  transition: opacity 0.8s ease-in-out;
+}
+
+.welcome-slide--active {
+  opacity: 1;
+}
+
+/* Play/pause and dots, bottom right under the title */
+.welcome-slide-info {
+  position: absolute;
+  right: 3rem;
+  bottom: 18vh;
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  flex-wrap: nowrap;
+  align-items: flex-end;
+  gap: 0.75rem;
+  max-width: 40vw;
+  /* the banner lets clicks through to the page below; this column takes them */
+  pointer-events: auto;
+}
+
+/* Netflix-style Play */
+.welcome-slide-play {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 1.5rem;
+  font-size: 1rem;
+  font-weight: 700;
+  color: #000;
+  background: #fff;
+  border: none;
+  border-radius: 0.375rem;
+  cursor: pointer;
+  animation: welcome-title-in 0.5s ease-out;
+}
+
+.welcome-slide-play svg {
+  width: 1.5rem;
+  height: 1.5rem;
+}
+
+@media (hover: hover) {
+  .welcome-slide-play:hover {
+    background: rgba(255, 255, 255, 0.8);
+  }
+}
+
+.welcome-slide-controls {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.welcome-slide-toggle {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  padding: 0;
+  color: #fff;
+  background: rgba(20, 20, 25, 0.6);
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  border-radius: 50%;
+  cursor: pointer;
+}
+
+.welcome-slide-toggle svg {
+  width: 1rem;
+  height: 1rem;
+}
+
+.welcome-slide-dots {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.welcome-slide-dot {
+  position: relative;
+  width: 0.5rem;
+  height: 0.5rem;
+  padding: 0;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.35);
+  border: none;
+  border-radius: 0.25rem;
+  cursor: pointer;
+  transition: width 0.3s ease, background 0.3s ease;
+}
+
+.welcome-slide-dot--active {
+  width: 1.75rem;
+}
+
+/* Progress inside the active dot */
+.welcome-slide-dot__fill {
+  position: absolute;
+  inset: 0;
+  background: #fff;
+  transform-origin: left center;
+  transform: scaleX(1);
+}
+
+.welcome-slide-dot__fill--running {
+  animation: welcome-dot-fill 3s linear forwards;
+}
+
+@keyframes welcome-dot-fill {
+  from {
+    transform: scaleX(0);
+  }
+
+  to {
+    transform: scaleX(1);
+  }
+}
+
+/* Title of the picture on screen, bottom right */
+.welcome-slide-title {
+  margin: 0;
+  text-align: right;
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: #fff;
+  text-shadow: 0 2px 12px rgba(0, 0, 0, 0.9);
+  animation: welcome-title-in 0.5s ease-out;
+}
+
+@keyframes welcome-title-in {
+  from {
+    opacity: 0;
+    transform: translateY(0.5rem);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .hero-overlay {

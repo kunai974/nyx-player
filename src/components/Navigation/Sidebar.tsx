@@ -34,6 +34,18 @@ const Sidebar: React.FC<SidebarProps> = ({ activeTab, onTabChange, onLogout, isH
             <polygon points="12.79 91.81 0 75.15 97.91 0 192.45 72.57 179.67 89.23 97.91 26.47 12.79 91.81"/>
           </svg>
         );
+      case 'movies': // Pellicule
+        return (
+          <svg className="nav-icon" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M4 3h16a1 1 0 011 1v16a1 1 0 01-1 1H4a1 1 0 01-1-1V4a1 1 0 011-1zm1 2v2h2V5H5zm0 4v2h2V9H5zm0 4v2h2v-2H5zm0 4v2h2v-2H5zm12-12v2h2V5h-2zm0 4v2h2V9h-2zm0 4v2h2v-2h-2zm0 4v2h2v-2h-2zM9 5v14h6V5H9z"/>
+          </svg>
+        );
+      case 'series': // Écran avec lecture et pied
+        return (
+          <svg className="nav-icon" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M3 4h18a1 1 0 011 1v11a1 1 0 01-1 1h-6l1.5 3H17v2H7v-2h.5L9 17H3a1 1 0 01-1-1V5a1 1 0 011-1zm1 2v9h16V6H4zm5 1.5l6 3.5-6 3.5v-7z"/>
+          </svg>
+        );
       case 'live': // Écran
         return (
           <svg className="nav-icon" viewBox="0 0 178.78 160.5" fill="currentColor">
@@ -74,7 +86,8 @@ const Sidebar: React.FC<SidebarProps> = ({ activeTab, onTabChange, onLogout, isH
         }
         onTabChange(type);
       }}
-      title={label}
+      aria-label={label}
+      data-label={label}
     >
       <div className="nav-icon-container">
         {getNyxIcon(type)}
@@ -100,13 +113,15 @@ const Sidebar: React.FC<SidebarProps> = ({ activeTab, onTabChange, onLogout, isH
       <nav className="sidebar-nav">
         {renderButton('search', t('search'))}
         {renderButton('dashboard', t('home'))}
+        {renderButton('movies', t('movies'))}
+        {renderButton('series', t('series'))}
         {renderButton('live', t('live'))}
         {renderButton('watchlist', t('watchlist'))}
-        {renderButton('settings', t('settings'))}
       </nav>
 
       <div className="sidebar-footer">
-        <button className="nav-item logout-button" onClick={onLogout} title={t('logout')} data-testid="nav-logout">
+        {renderButton('settings', t('settings'))}
+        <button className="nav-item logout-button" onClick={onLogout} aria-label={t('logout')} data-label={t('logout')} data-testid="nav-logout">
           <div className="nav-icon-container">
             {getNyxIcon('logout')}
           </div>

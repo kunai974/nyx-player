@@ -85,6 +85,8 @@ export const SettingsSidebar: React.FC<SettingsSidebarProps> = ({
                     </button>
                 )}
             </nav>
+
+            <p className="settings-sidebar__credit" data-testid="settings-sidebar-credit">{t('macos_credit')}</p>
         </aside>
     );
 };

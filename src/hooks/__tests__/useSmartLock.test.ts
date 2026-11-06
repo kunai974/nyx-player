@@ -105,6 +105,21 @@ describe('useSmartLock', () => {
     expect(result.current.isVisible).toBe(true);
   });
 
+  it('un menu fermé après l\'échéance du timer : les contrôles se masquent ensuite d\'eux-mêmes', () => {
+    const { result, rerender } = renderHook(({ menu }) => useSmartLock(menu), {
+      initialProps: { menu: { ...defaultMenu, showSpeedMenu: true } },
+    });
+
+    // Le timer échoit menu ouvert : les contrôles restent
+    act(() => { vi.advanceTimersByTime(3000); });
+    expect(result.current.isVisible).toBe(true);
+
+    // Le menu se ferme sans mouvement de souris : avant, les contrôles restaient affichés pour toujours
+    rerender({ menu: defaultMenu });
+    act(() => { vi.advanceTimersByTime(3000); });
+    expect(result.current.isVisible).toBe(false);
+  });
+
   it('restaure le curseur au unmount', () => {
     const { unmount } = renderHook(() => useSmartLock(defaultMenu));
 

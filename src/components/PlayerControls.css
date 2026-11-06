@@ -68,9 +68,18 @@
   z-index: 50;
   pointer-events: none;
   display: flex;
+  flex-direction: column;
   flex-wrap: nowrap;
   justify-content: center;
   align-items: center;
+  gap: 0.75rem;
+}
+
+.player-loading-text {
+  margin: 0;
+  color: #fff;
+  font-size: 1rem;
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.8);
 }
 
 .player-loading-spinner {
@@ -679,4 +688,4 @@
 .player-lock-btn-fixed.locked:hover {
   opacity: 1;
   /* User request: 100% opacity on hover */
-}
+}

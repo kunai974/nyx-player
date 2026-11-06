@@ -631,6 +631,36 @@
   margin: 0 0 var(--space-4) 0;
 }
 
+.about-macos-credit {
+  max-width: 30rem;
+  margin: 0 auto var(--space-4) auto;
+  padding: var(--space-3) var(--space-4);
+  background: var(--hover-overlay);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg, 1rem);
+}
+
+.about-macos-credit h4 {
+  margin: 0 0 var(--space-1) 0;
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.about-macos-credit__name {
+  margin: 0 0 var(--space-2) 0;
+  font-weight: var(--font-bold);
+  color: var(--text-primary);
+}
+
+.about-macos-credit__changes {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  line-height: var(--leading-normal);
+}
+
 .about-description {
   font-size: var(--text-base);
   color: var(--text-secondary);
@@ -665,6 +695,14 @@
   align-items: center;
   gap: var(--space-2);
   margin-bottom: var(--space-4);
+}
+
+.about-changelog-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: var(--space-2);
+  margin-bottom: var(--space-3);
 }
 
 .about-changelog-link {

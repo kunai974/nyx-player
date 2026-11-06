@@ -1,4 +1,8 @@
 {
+  "slideshow_watch": "Lecture",
+  "slideshow_pause": "Mettre le diaporama en pause",
+  "slideshow_play": "Lancer le diaporama",
+  "slideshow_label": "Derniers films et séries",
   "hero_welcome_title": "Bienvenue sur Nyx Player",
   "hero_welcome_subtitle": "Explorez notre catalogue de films et séries",
   "hero_play": "Reprendre",

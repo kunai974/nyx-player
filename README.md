@@ -11,6 +11,21 @@
 
 ---
 
+> [!IMPORTANT]
+> ## ⚠️ VERY IMPORTANT — macOS: do this FIRST
+>
+> **On every Mac you install Nyx Player on, run this in Terminal before opening the app:**
+>
+> ```bash
+> brew install mpv
+> ```
+>
+> Nyx Player on macOS does **not** bundle the video engine (libmpv) yet. Without Homebrew's mpv
+> installed, **videos will not play**. Don't have Homebrew? Get it at <https://brew.sh> first.
+>
+> The macOS build is also **not signed yet**: the first time you open it, right-click the app and
+> choose **Open** (or run `xattr -cr "/Applications/Nyx Player.app"`).
+
 ## What Nyx is (and is not)
 
 Nyx Player is a **player**. It does **not** provide, sell or link to any TV channel, film or series.

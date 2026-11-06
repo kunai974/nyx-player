@@ -1,6 +1,13 @@
 {
   "home": "Accueil",
   "search": "Recherche",
+  "movies": "Films",
+  "series": "Séries",
+  "filter_all_categories": "Toutes les catégories",
+  "sort_newest": "Ajouts récents",
+  "sort_oldest": "Ajouts anciens",
+  "sort_az": "A à Z",
+  "sort_za": "Z à A",
   "live": "Direct",
   "watchlist": "Ma Liste",
   "settings": "Paramètres",

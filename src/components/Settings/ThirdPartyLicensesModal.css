@@ -105,3 +105,16 @@
   cursor: pointer;
   text-align: left;
 }
+
+/* macOS changelog: bullet list inside a group */
+.macos-changelog__items {
+  margin: 0.5rem 0 0 0;
+  padding-left: 1.25rem;
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  line-height: var(--leading-normal);
+}
+
+.macos-changelog__items li + li {
+  margin-top: 0.35rem;
+}

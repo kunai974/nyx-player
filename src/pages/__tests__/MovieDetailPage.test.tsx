@@ -43,7 +43,7 @@ vi.mock('../../services/tmdbApi', () => ({
   default: { imageUrl: (path: string, size: string) => `http://exemple.test/${size}${path}` },
 }));
 vi.mock('../../services/watchlistActions', () => ({ toggleWatchlistOrNotify: vi.fn() }));
-vi.mock('../../services/playbackProgressService', () => ({ clearProgress: vi.fn() }));
+vi.mock('../../services/playbackProgressService', () => ({ clearProgress: vi.fn(), getProgressByStreamId: vi.fn().mockResolvedValue(null) }));
 
 vi.mock('../../components/Skeletons/MovieSkeleton', () => ({ default: () => <div data-testid="squelette" /> }));
 vi.mock('../../components/Detail/TrailerCard', () => ({

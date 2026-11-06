@@ -83,13 +83,17 @@ export function useSmartLock(menuState: MenuState, hideDelayMs = 3000): SmartLoc
     setIsVisible(true);
     document.body.style.cursor = 'default';
     if (hideTimeoutRef.current) clearTimeout(hideTimeoutRef.current);
-    hideTimeoutRef.current = setTimeout(() => {
+    const tryHide = () => {
       const m = menuStateRef.current;
       if (!m.showAudioSubMenu && !m.showVolumeSlider && !m.showSpeedMenu && !m.channelSwitcherOpen && !m.episodeSwitcherOpen && !m.statsOpen) {
         setIsVisible(false);
         document.body.style.cursor = 'none';
+      } else {
+        // A menu is open: look again later, so the controls still hide once it closes
+        hideTimeoutRef.current = setTimeout(tryHide, hideDelayMs);
       }
-    }, hideDelayMs);
+    };
+    hideTimeoutRef.current = setTimeout(tryHide, hideDelayMs);
   }, [isLocked, showLockButton, hideDelayMs]);
 
   // Stable ref to always point to latest resetHideTimer (avoids re-running effects)

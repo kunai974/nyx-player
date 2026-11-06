@@ -5,6 +5,8 @@
   "synopsis_unavailable": "No synopsis available.",
   "tmdb_unavailable": "No additional information available on TMDB.",
   "casting": "Cast:",
+  "resume_episode": "Resume S{{season}}E{{episode}} · {{time}}",
+  "resume_at": "Resume from {{time}}",
   "play": "Play",
   "play_episode": "Play",
   "titles_count": "{{count}} titles",

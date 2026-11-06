@@ -5,6 +5,8 @@
   "synopsis_unavailable": "Aucun synopsis disponible.",
   "tmdb_unavailable": "Aucune information supplémentaire disponible sur TMDB.",
   "casting": "Casting :",
+  "resume_episode": "Reprendre S{{season}}E{{episode}} · {{time}}",
+  "resume_at": "Reprendre à {{time}}",
   "play": "Lecture",
   "add_to_watchlist": "Ajouter à ma liste",
   "remove_from_watchlist": "Retirer de ma liste",

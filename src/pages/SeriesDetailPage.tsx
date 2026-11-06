@@ -15,6 +15,7 @@ import NyxDropdown from '../components/Common/NyxDropdown';
 import { renderStars } from '../components/Detail/StarRating';
 import SourceSelector from '../components/Detail/SourceSelector';
 import { clearMultipleProgress } from '../services/playbackProgressService';
+import { formatResumeTime } from '../utils/timeHelpers';
 import { useDevOverrides } from '../contexts/DevOverrideContext';
 import { usePlayer } from '../contexts/PlayerContext';
 import { useTranslation } from 'react-i18next';
@@ -94,6 +95,19 @@ const SeriesDetailPage: React.FC<SeriesDetailPageProps> = ({
     }
   }, [watchlistTmdbId, watchlistStreamId]);
 
+  // Start an episode (episode card, or the Resume button)
+  const playEpisode = (ep: XtreamEpisode) => {
+    const seriesWithEpisodes = { ...series, episodes: localEpisodes || undefined };
+    setCurrentSeries({ ...seriesWithEpisodes, tmdbTitle: details?.name });
+    void play(ep, seriesWithEpisodes, undefined, {
+      tmdbTitle: details?.name,
+      tmdbId: details?.id || undefined,
+      posterUrl: details?.poster_path
+        ? tmdb.imageUrl(details.poster_path, 'w500') || undefined
+        : series.cover || undefined,
+    });
+  };
+
   // Backdrop
   const [backdropIndex] = useState(() => Math.floor(Math.random() * 5));
   const backdropUrl = useBackdropUrl(
@@ -159,6 +173,16 @@ const SeriesDetailPage: React.FC<SeriesDetailPageProps> = ({
   const currentEpisodes = devOverrides.forceEmptySeason
     ? []
     : (localEpisodes?.[selectedSeason] || []);
+
+  // The episode the viewer stopped in: the latest one of this season that is started but not finished
+  const resumeEpisode = [...currentEpisodes]
+    .reverse()
+    .find((ep) => {
+      const info = ep.id ? episodeProgress.get(Number(ep.id)) : undefined;
+      return !!info && info.timeSeconds >= 10 && info.progressPercent < 95;
+    });
+  const resumeInfo = resumeEpisode?.id ? episodeProgress.get(Number(resumeEpisode.id)) : undefined;
+
 
   // Poster fallback for episode images
   const posterFallback =
@@ -314,6 +338,24 @@ const SeriesDetailPage: React.FC<SeriesDetailPageProps> = ({
                     {t(currentEpisodes.length > 1 ? 'episode_count_plural' : 'episode_count', { count: currentEpisodes.length })}
                   </span>
 
+                  {/* Resume the episode the viewer stopped in */}
+                  {resumeEpisode && resumeInfo && (
+                    <button
+                      type="button"
+                      className="resume-episode-btn"
+                      data-testid="series-detail-resume"
+                      onClick={() => playEpisode(resumeEpisode)}
+                    >
+                      <span aria-hidden="true">▶</span>
+                      {t('resume_episode', {
+                        season: selectedSeason,
+                        episode: resumeEpisode.episode_num || 1,
+                        time: formatResumeTime(resumeInfo.timeSeconds),
+                      })}
+                      <i className="resume-episode-bar" aria-hidden="true" style={{ width: `${Math.min(100, resumeInfo.progressPercent)}%` }} />
+                    </button>
+                  )}
+
                   {/* Watchlist Button */}
                   <WatchlistButton
                     isAdded={inWatchlist}
@@ -338,7 +380,8 @@ const SeriesDetailPage: React.FC<SeriesDetailPageProps> = ({
                     <button
                       className="reset-season-btn"
                       data-testid="series-detail-reset-season"
-                      title={t('reset_season_tooltip')}
+                      aria-label={t('reset_season_tooltip')}
+                      data-tip={t('reset_season_tooltip')}
                       onClick={() => {
                         const episodeIds = currentEpisodes.map(ep => ep.id || ep.title).filter(Boolean);
                         clearMultipleProgress(episodeIds as (string | number)[]).catch(warnOnReject('SeriesDetail'));
@@ -402,17 +445,7 @@ const SeriesDetailPage: React.FC<SeriesDetailPageProps> = ({
                       progress={progress}
                       dragStarted={dragStarted}
                       tmdbLoading={devOverrides.forceSeasonLoading || isSeasonLoading}
-                      onPlay={(ep) => {
-                        const seriesWithEpisodes = { ...series, episodes: localEpisodes || undefined };
-                        setCurrentSeries({ ...seriesWithEpisodes, tmdbTitle: details?.name });
-                        void play(ep, seriesWithEpisodes, undefined, {
-                          tmdbTitle: details?.name,
-                          tmdbId: details?.id || undefined,
-                          posterUrl: details?.poster_path
-                            ? tmdb.imageUrl(details.poster_path, 'w500') || undefined
-                            : series.cover || undefined,
-                        });
-                      }}
+                      onPlay={playEpisode}
                       onProgressReset={() => {
                         setShowResetToast(true);
                         setTimeout(() => setShowResetToast(false), 3000);

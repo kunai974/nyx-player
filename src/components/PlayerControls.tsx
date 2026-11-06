@@ -7,6 +7,7 @@
  */
 
 import React, { useCallback, useEffect, useRef } from 'react';
+import { useTranslation } from 'react-i18next';
 import { PlayIcon, PauseIcon } from './Player/PlayerIcons';
 import ChannelSwitcher from './Tv/ChannelSwitcher';
 import EpisodeSwitcher from './Player/EpisodeSwitcher';
@@ -97,6 +98,7 @@ const PlayerControls: React.FC<PlayerControlsProps> = ({
 
   // ---- UI refs ----
   const progressRef = useRef<HTMLDivElement>(null);
+  const { t: tPlayer } = useTranslation('player');
   const containerRef = useRef<HTMLDivElement>(null);
 
   // ---- Hooks: episode navigation wrapper (needs savePlaybackPosition) ----
@@ -244,6 +246,7 @@ const PlayerControls: React.FC<PlayerControlsProps> = ({
       {showLoadingIndicator && (
         <div className="player-loading">
           <div className="player-loading-spinner" />
+          {(pc.forceLoading || mpv.isLoading) && <p className="player-loading-text">{tPlayer('please_wait')}</p>}
         </div>
       )}
 

@@ -22,7 +22,8 @@ tauri-build = { version = "~2.6.3", features = [] }
 [dependencies]
 # 2.11.6 : corrige GHSA-7gmj-67g7-phm9 (2.11.1) et GHSA-w28w-mhc8-qvjv (2.11.6). Ligne 2.11 tenue (~) :
 # @tauri-apps/api et @tauri-apps/cli doivent rester sur la même version mineure (package.json)
-tauri = { version = "~2.11.6", features = [] }
+# « macos-private-api » : fenêtre transparente sur macOS (sans effet sur Windows et Android), voir tauri.conf.json
+tauri = { version = "~2.11.6", features = ["macos-private-api"] }
 tauri-plugin-opener = "2"
 # Base de la page (secure_db.rs), ouverte directement par sqlx
 sqlx = { version = "0.8", default-features = false, features = ["sqlite", "runtime-tokio", "json"] }
@@ -72,6 +73,12 @@ reqwest = { version = "0.12", default-features = false, features = ["json", "rus
 # Fils de préparation des affiches en faible priorité (poster_thumbs.rs). Déjà présent via tokio : aucun paquet en plus
 [target.'cfg(any(target_os = "linux", target_os = "android"))'.dependencies]
 libc = "0.2"
+
+# macOS : fond transparent de la WKWebView pour afficher mpv derrière la page (transparency.rs)
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "0.6"
+libloading = "0.8"
+objc2-foundation = { version = "0.3", default-features = false, features = ["NSString", "NSValue", "NSObject"] }
 
 [target.'cfg(windows)'.dependencies]
 webview2-com = "0.38"

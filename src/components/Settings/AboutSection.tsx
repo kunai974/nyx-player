@@ -11,6 +11,7 @@ import logoTmdb from '../../assets/tmdb/tmdb-logo-blue-short.svg';
 import checkIcon from '../../assets/icons/check.svg';
 import { isAndroid, isMobile } from '../../utils/platform';
 import ThirdPartyLicensesModal from './ThirdPartyLicensesModal';
+import MacosChangelogModal from './MacosChangelogModal';
 import AndroidUpdateActions from './AndroidUpdateActions';
 import { warnOnReject } from '../../utils/warnOnReject';
 import { legalNoticesUrl, privacyPolicyUrl, termsUrl } from '../../utils/legalLinks';
@@ -83,6 +84,7 @@ const AboutSection: React.FC = () => {
     // ---- Report Bug state ----
     const [showBugForm, setShowBugForm] = useState(false);
     const [showLicenses, setShowLicenses] = useState(false);
+    const [showMacosChangelog, setShowMacosChangelog] = useState(false);
     const [bugDescription, setBugDescription] = useState('');
     const [bugSent, setBugSent] = useState(false);
 
@@ -120,6 +122,11 @@ const AboutSection: React.FC = () => {
                 <p className="about-description">
                     {t('about_desc')}
                 </p>
+                <div className="about-macos-credit" data-testid="settings-about-macos-credit">
+                    <h4>{t('macos_credit_title')}</h4>
+                    <p className="about-macos-credit__name">{t('macos_credit')}</p>
+                    <p className="about-macos-credit__changes">{t('macos_credit_changes')}</p>
+                </div>
                 {/* Mention exigée par les conditions de l'API TMDB : leur logo officiel, plus petit que le
                     nôtre, et leur phrase. En haut de page : lisible sans défilement, y compris à la
                     télécommande où ce bloc ne reçoit pas le focus. */}
@@ -163,21 +170,27 @@ const AboutSection: React.FC = () => {
                     {isAndroid() && <AndroidUpdateActions updater={updater} />}
                 </div>
                 )}
-                <button
-                    type="button"
-                    className="about-changelog-link"
-                    data-testid="settings-changelog"
-                    onClick={() => void openExternalLink(`${LEGAL_BASE_URL}/changelog.html`)}
-                >
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ width: '0.85rem', height: '0.85rem', marginRight: '0.35rem', verticalAlign: 'middle' }}>
-                        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-                        <polyline points="14 2 14 8 20 8" />
-                        <line x1="16" y1="13" x2="8" y2="13" />
-                        <line x1="16" y1="17" x2="8" y2="17" />
-                        <polyline points="10 9 9 9 8 9" />
-                    </svg>
-                    Changelog
-                </button>
+                <div className="about-changelog-buttons">
+                    <NyxButton
+                        variant="secondary"
+                        size="sm"
+                        color="blue"
+                        data-testid="settings-changelog"
+                        onClick={() => void openExternalLink(`${LEGAL_BASE_URL}/changelog.html`)}
+                    >
+                        {t('changelog_button')}
+                    </NyxButton>
+                    <NyxButton
+                        variant="secondary"
+                        size="sm"
+                        color="blue"
+                        data-testid="settings-macos-changelog"
+                        onClick={() => setShowMacosChangelog(true)}
+                    >
+                        {t('macos_changelog_title')}
+                    </NyxButton>
+                </div>
+                <MacosChangelogModal isOpen={showMacosChangelog} onClose={() => setShowMacosChangelog(false)} />
                 <button
                     type="button"
                     className="about-changelog-link"

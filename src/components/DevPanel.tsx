@@ -13,6 +13,7 @@ import { isTvOverrideEnabled, TV_OVERRIDE_KEY } from '../utils/platform';
 import type { LoginPageOverrides } from '../contexts/DevOverrideContext';
 import { invoke } from '@tauri-apps/api/core';
 import { getDatabaseFileName } from '../services/dbCore';
+import { useTranslation } from 'react-i18next';
 import './DevPanel.css';
 
 /** Libellé de chaque erreur Xtream que le panneau sait forcer (le type exige les trois). */
@@ -74,6 +75,7 @@ const DevPanel: React.FC = () => {
   const [tvMode] = useState(() => isTvOverrideEnabled());
 
   const { overrides, setLoginOverride, resetLoginOverrides, setXtreamOverride, resetXtreamOverrides, setWatchlistOverride, resetWatchlistOverrides, setGlobalSearchOverride, resetGlobalSearchOverrides, setSettingsOverride, resetSettingsOverrides, setLiveTvOverride, resetLiveTvOverrides, setMovieDetailOverride, resetMovieDetailOverrides, setSeriesDetailOverride, resetSeriesDetailOverrides, setDashboardOverride, resetDashboardOverrides, setPlayerControlsOverride, resetPlayerControlsOverrides, isDevMode, resetAll } = useDevOverrides();
+  const { i18n } = useTranslation();
   const [isOpen, setIsOpen] = useState(false);
   const [viewport, setViewport] = useState({ w: window.innerWidth, h: window.innerHeight });
   const [textScale, setTextScale] = useState(100);
@@ -1641,6 +1643,26 @@ const DevPanel: React.FC = () => {
           {/* ---- PlayerControls section ---- */}
           {page === 'PlayerControls' && (
             <>
+              {/* Language */}
+              <div className="dev-panel__section">
+                <div className="dev-panel__section-title">Language</div>
+                <div className="dev-panel__row">
+                  <span className="dev-panel__label">Player language</span>
+                  <div className="dev-panel__radio-group">
+                    {([['en', 'UK'], ['fr', 'FR']] as const).map(([code, label]) => (
+                      <button
+                        key={code}
+                        type="button"
+                        className={`dev-panel__radio ${i18n.resolvedLanguage === code ? 'dev-panel__radio--active' : ''}`}
+                        onClick={() => { void i18n.changeLanguage(code); }}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
               {/* States */}
               <div className="dev-panel__section">
                 <div className="dev-panel__section-title">États Player</div>

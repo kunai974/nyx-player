@@ -15,7 +15,7 @@
 //! Les événements mpv (`mpv-event-<fenêtre>`) restent de simples événements Tauri émis par le plugin.
 
 // Android : libmpv passe par le plugin nyx-android, les vérifications ne servent qu'aux tests
-#![cfg_attr(mobile, allow(dead_code))]
+#![cfg_attr(any(mobile, target_os = "macos"), allow(dead_code))]
 
 use serde_json::Value;
 
@@ -111,10 +111,20 @@ pub fn validate_init_args(args: &[String]) -> Result<(), String> {
 /// sans elle, le changement de piste audio échoue). Jamais ailleurs.
 const LINUX_AUDIT_ARGS: &[&str] = &["--vo=gpu-next,gpu,x11", "--ao=null"];
 
+/// macOS: shorter stream probing so a title opens (and resumes) sooner. FFmpeg otherwise reads up to
+/// 5 s / 5 MB of an IPTV stream before showing the first frame.
+#[cfg(target_os = "macos")]
+const MACOS_FAST_START_ARGS: &[&str] = &["--demuxer-lavf-analyzeduration=2", "--demuxer-lavf-probesize=1048576"];
+
 fn platform_args(linux_audit: bool) -> &'static [&'static str] {
     if linux_audit {
         LINUX_AUDIT_ARGS
     } else {
+        #[cfg(target_os = "macos")]
+        {
+            return MACOS_FAST_START_ARGS;
+        }
+        #[allow(unreachable_code)]
         &[]
     }
 }
@@ -225,7 +235,7 @@ pub fn validate_command(name: &str, args: &[Value]) -> Result<Vec<Value>, String
 // ============= Commandes Tauri =============
 
 /// Lance mpv (ou réutilise le processus vivant) pour la fenêtre appelante.
-#[cfg(desktop)]
+#[cfg(all(desktop, not(target_os = "macos")))]
 #[tauri::command]
 pub async fn nyx_mpv_init<R: tauri::Runtime>(
     app: tauri::AppHandle<R>,
@@ -250,7 +260,8 @@ pub async fn nyx_mpv_init<R: tauri::Runtime>(
             args: launch_args(args, ca_bundle.as_deref()),
             observed_properties,
             ipc_timeout_ms: clamp_ipc_timeout(ipc_timeout_ms),
-            show_mpv_output: false,
+            // Dev builds: surface mpv's own stderr so embedding/crash causes are visible in the terminal
+            show_mpv_output: cfg!(debug_assertions),
         };
         app.mpv().init(config, &label)
     })
@@ -269,7 +280,24 @@ fn mpv_path<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> Result<std::path::P
         let _ = app;
         Ok(std::path::PathBuf::from(LINUX_AUDIT_MPV))
     }
-    #[cfg(not(all(target_os = "linux", feature = "audit")))]
+    #[cfg(target_os = "macos")]
+    {
+        use tauri::Manager;
+        // mpv embarqué dans l'app s'il existe, sinon celui de Homebrew (développement)
+        let bundled = app
+            .path()
+            .resolve("mpv/mpv", tauri::path::BaseDirectory::Resource)
+            .map_err(|e| format!("mpv process failed: {}", e))?;
+        if bundled.is_file() {
+            return Ok(bundled);
+        }
+        MACOS_SYSTEM_MPV
+            .iter()
+            .map(std::path::PathBuf::from)
+            .find(|p| p.is_file())
+            .ok_or_else(|| "mpv process failed: mpv not found (brew install mpv)".to_string())
+    }
+    #[cfg(not(any(target_os = "macos", all(target_os = "linux", feature = "audit"))))]
     {
         use tauri::Manager;
         app.path()
@@ -278,12 +306,16 @@ fn mpv_path<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> Result<std::path::P
     }
 }
 
+/// mpv de Homebrew (Apple Silicon puis Intel), repli quand l'app n'embarque pas son propre mpv.
+#[cfg(target_os = "macos")]
+const MACOS_SYSTEM_MPV: &[&str] = &["/opt/homebrew/bin/mpv", "/usr/local/bin/mpv"];
+
 /// mpv du système, pour la seule version d'audit Linux (banc cloud).
 #[cfg_attr(not(all(target_os = "linux", feature = "audit")), allow(dead_code))]
 const LINUX_AUDIT_MPV: &str = "/usr/bin/mpv";
 
 /// Envoie une commande mpv autorisée ; renvoie la donnée de la réponse (ex. `get_property`).
-#[cfg(desktop)]
+#[cfg(all(desktop, not(target_os = "macos")))]
 #[tauri::command]
 pub async fn nyx_mpv_command<R: tauri::Runtime>(
     app: tauri::AppHandle<R>,
@@ -328,7 +360,7 @@ pub async fn nyx_mpv_command<R: tauri::Runtime>(
 /// Marges vidéo (panneau des chaînes). Remplace `plugin:mpv|set_video_margin_ratio`, qui plantait
 /// en gardant le verrou du plugin si mpv n'était pas encore lancé (lecteur bloqué jusqu'au
 /// redémarrage).
-#[cfg(desktop)]
+#[cfg(all(desktop, not(target_os = "macos")))]
 #[tauri::command]
 pub async fn nyx_mpv_set_margins<R: tauri::Runtime>(
     app: tauri::AppHandle<R>,
@@ -374,7 +406,7 @@ fn is_still_running(status: std::io::Result<Option<std::process::ExitStatus>>) -
 /// processus s'arrête (plantage, arrêt forcé) : le lecteur resterait ouvert, transparent et muet.
 /// Le web interroge cette commande pendant la lecture (`mpvBridge.ts`). Aucune communication avec
 /// mpv, seulement l'état du processus ; verrou déjà pris (lancement en cours) = supposé vivant.
-#[cfg(desktop)]
+#[cfg(all(desktop, not(target_os = "macos")))]
 #[tauri::command]
 pub async fn nyx_mpv_alive<R: tauri::Runtime>(
     app: tauri::AppHandle<R>,
@@ -392,6 +424,50 @@ pub async fn nyx_mpv_alive<R: tauri::Runtime>(
     Ok(instances
         .get_mut(&label)
         .is_some_and(|instance| is_still_running(instance.process.try_wait())))
+}
+
+// ---- macOS: libmpv inside the app (mpv_macos.rs), same commands for the web side ----
+
+#[cfg(target_os = "macos")]
+#[tauri::command]
+pub async fn nyx_mpv_init(
+    app: tauri::AppHandle,
+    window: tauri::Window,
+    args: Vec<String>,
+    observed_properties: Vec<String>,
+    ipc_timeout_ms: u64,
+) -> Result<String, String> {
+    let _ = ipc_timeout_ms;
+    validate_init_args(&args)?;
+    validate_observed_properties(&observed_properties)?;
+    let ca_bundle = crate::mpv_tls::ensure_bundle(&app);
+    crate::mpv_macos::init(app, window, launch_args(args, ca_bundle.as_deref()), observed_properties).await
+}
+
+#[cfg(target_os = "macos")]
+#[tauri::command]
+pub async fn nyx_mpv_command(name: String, args: Vec<Value>) -> Result<Option<Value>, String> {
+    let command = validate_command(&name, &args)?;
+    tauri::async_runtime::spawn_blocking(move || crate::mpv_macos::command(&name, &command[1..]))
+        .await
+        .map_err(|_| "mpv process failed: command interrupted".to_string())?
+}
+
+#[cfg(target_os = "macos")]
+#[tauri::command]
+pub async fn nyx_mpv_set_margins(
+    left: Option<f64>,
+    right: Option<f64>,
+    top: Option<f64>,
+    bottom: Option<f64>,
+) -> Result<(), String> {
+    crate::mpv_macos::set_margins(clamp_margin(left), clamp_margin(right), clamp_margin(top), clamp_margin(bottom))
+}
+
+#[cfg(target_os = "macos")]
+#[tauri::command]
+pub async fn nyx_mpv_alive() -> Result<bool, String> {
+    Ok(crate::mpv_macos::alive())
 }
 
 /// Android : libmpv passe par le plugin nyx-android, jamais par ces commandes.
@@ -512,7 +588,10 @@ mod tests {
     #[test]
     fn x11_output_only_for_the_linux_audit_build() {
         assert_eq!(platform_args(true), &["--vo=gpu-next,gpu,x11", "--ao=null"]);
+        #[cfg(not(target_os = "macos"))]
         assert!(platform_args(false).is_empty());
+        #[cfg(target_os = "macos")]
+        assert_eq!(platform_args(false).len(), 2);
         // Hors version d'audit Linux, les options de lancement ne changent pas
         #[cfg(not(all(target_os = "linux", feature = "audit")))]
         assert!(!launch_args(vec![], None).iter().any(|a| a.starts_with("--vo=") || a.starts_with("--ao=")));

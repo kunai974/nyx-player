@@ -40,3 +40,12 @@ export function formatClock(epochSeconds: number): string {
   const d = new Date(epochSeconds * 1000);
   return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
 }
+
+/** 75 -> "1:15", 3725 -> "1:02:05" (where the viewer stopped, for Resume buttons) */
+export function formatResumeTime(totalSeconds: number): string {
+  const s = Math.max(0, Math.floor(totalSeconds));
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const sec = String(s % 60).padStart(2, '0');
+  return h > 0 ? `${h}:${String(m).padStart(2, '0')}:${sec}` : `${m}:${sec}`;
+}

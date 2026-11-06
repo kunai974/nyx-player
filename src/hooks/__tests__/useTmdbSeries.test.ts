@@ -11,7 +11,7 @@ import type { IptvSeries } from '../../types/iptv';
 let language: 'fr-FR' | 'en-US' = 'fr-FR';
 vi.mock('../../utils/tmdbLanguage', () => ({ getTmdbLanguage: () => language }));
 vi.mock('../../services/tmdbApi', () => ({
-  default: { getTvDetails: vi.fn(), getSeasonDetailsWithFallback: vi.fn() },
+  default: { getTvDetails: vi.fn(), getSeasonDetailsWithFallback: vi.fn(), searchTv: vi.fn(async () => ({ results: [] })) },
 }));
 vi.mock('../../services/tmdbCacheSqlite', () => ({
   getCachedDetails: vi.fn(),
@@ -58,10 +58,10 @@ describe('useTmdbSeries', () => {
     expect(cacheSeriesDetails).not.toHaveBeenCalled();
   });
 
-  it('sans numéro TMDB chez le fournisseur : données du fournisseur tout de suite, sans aucun appel', () => {
+  it('sans numéro TMDB chez le fournisseur : recherche par titre, rien trouvé = données du fournisseur', async () => {
     const { result } = renderHook(() => useTmdbSeries(series(0), 1));
 
-    expect(result.current.loadingState).toBe('fallback');
+    await waitFor(() => expect(result.current.loadingState).toBe('fallback'), { timeout: 2000 });
     expect(result.current.tmdbId).toBeNull();
     expect(getCachedDetails).not.toHaveBeenCalled();
     expect(tmdb.getTvDetails).not.toHaveBeenCalled();

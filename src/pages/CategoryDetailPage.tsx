@@ -16,6 +16,8 @@ interface CategoryDetailPageProps {
   type: 'movies' | 'series';
   onNavigateToContent: NavigateToContent;
   onBack: () => void;
+  /** Extra controls in the header (filters) */
+  headerExtra?: React.ReactNode;
 }
 
 // Grid layout constants
@@ -31,6 +33,7 @@ const CategoryDetailPage: React.FC<CategoryDetailPageProps> = ({
   type,
   onNavigateToContent,
   onBack,
+  headerExtra,
 }) => {
   const { t } = useTranslation('details');
   const containerRef = useRef<HTMLDivElement>(null);
@@ -132,6 +135,7 @@ const CategoryDetailPage: React.FC<CategoryDetailPageProps> = ({
           </svg>
         </button>
         <h1 className="category-detail-title">{categoryName}</h1>
+        {headerExtra && <div className="category-detail-filters">{headerExtra}</div>}
         <span className="category-detail-count">{t('titles_count', { count: items.length })}</span>
       </div>
 

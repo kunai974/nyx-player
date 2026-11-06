@@ -1,6 +1,13 @@
 {
   "home": "Home",
   "search": "Search",
+  "movies": "Movies",
+  "series": "TV Shows",
+  "filter_all_categories": "All categories",
+  "sort_newest": "Newest added",
+  "sort_oldest": "Oldest added",
+  "sort_az": "A to Z",
+  "sort_za": "Z to A",
   "live": "Live TV",
   "watchlist": "My List",
   "settings": "Settings",

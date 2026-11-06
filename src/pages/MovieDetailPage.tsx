@@ -12,10 +12,11 @@ import ContentCarousel from '../components/Lists/ContentCarousel';
 import SourceSelector from '../components/Detail/SourceSelector';
 import TrailerCard from '../components/Detail/TrailerCard';
 import { renderStars } from '../components/Detail/StarRating';
-import { clearProgress } from '../services/playbackProgressService';
+import { clearProgress, getProgressByStreamId } from '../services/playbackProgressService';
 import { usePlayer } from '../contexts/PlayerContext';
 import { useDevOverrides } from '../contexts/DevOverrideContext';
 import { useTranslation } from 'react-i18next';
+import { formatResumeTime } from '../utils/timeHelpers';
 import { getTmdbLanguage } from '../utils/tmdbLanguage';
 import { pickBestLogo } from '../utils/tmdbLogoHelper';
 import { useTvPageFocus } from '../hooks/useTvPageFocus';
@@ -55,7 +56,7 @@ const MovieDetailPage: React.FC<MovieDetailPageProps> = ({
   replayEntrance,
 }) => {
   const { t } = useTranslation('details');
-  const { play } = usePlayer();
+  const { play, currentlyPlaying } = usePlayer();
   const { overrides, setActivePage } = useDevOverrides();
   const mdOverrides = overrides.movieDetailPage;
   // Stable base item for identification
@@ -120,6 +121,18 @@ const MovieDetailPage: React.FC<MovieDetailPageProps> = ({
   // --- UI States ---
   const [isVisible, setIsVisible] = useState(false);
   const [showResetToast, setShowResetToast] = useState(false);
+  // Where the viewer stopped, for the "Resume" label on the play button
+  const [savedProgressRaw, setSavedProgress] = useState<{ timeSeconds: number; progressPercent: number } | null>(null);
+  const progressStreamId = selectedVersion?.stream_id;
+  const savedProgress = hasMovieProgress ? savedProgressRaw : null; // cleared progress hides the label at once
+  useEffect(() => {
+    if (!hasMovieProgress || progressStreamId == null) return;
+    let cancelled = false;
+    getProgressByStreamId(Number(progressStreamId))
+      .then((p) => { if (!cancelled) setSavedProgress(p && p.timeSeconds >= 10 ? p : null); })
+      .catch(warnOnReject('MovieDetail'));
+    return () => { cancelled = true; };
+  }, [hasMovieProgress, progressStreamId, currentlyPlaying]); // re-read after the player closes
 
   // Handle initial entrance animation
   useEffect(() => {
@@ -273,7 +286,15 @@ const MovieDetailPage: React.FC<MovieDetailPageProps> = ({
                     });
                   }}
                 >
-                  <span>▶</span> {t('play')}
+                  <span>▶</span>
+                  {savedProgress ? t('resume_at', { time: formatResumeTime(savedProgress.timeSeconds) }) : t('play')}
+                  {savedProgress && (
+                    <i
+                      className="play-resume-bar"
+                      aria-hidden="true"
+                      style={{ width: `${Math.min(100, Math.max(0, savedProgress.progressPercent))}%` }}
+                    />
+                  )}
                 </button>
 
                 <WatchlistButton
@@ -309,7 +330,8 @@ const MovieDetailPage: React.FC<MovieDetailPageProps> = ({
                   <button
                     className="reset-progress-btn"
                     data-testid="movie-detail-reset-progress"
-                    title={t('reset_progress')}
+                    aria-label={t('reset_progress')}
+                    data-tip={t('reset_progress')}
                     onClick={() => {
                       clearProgress(selectedVersion.stream_id).then(() => {
                         setHasMovieProgress(false);

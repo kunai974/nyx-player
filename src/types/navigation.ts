@@ -21,7 +21,7 @@ import type { TmdbId } from './common';
 // ============================================================================
 
 /** Tabs de navigation principaux de l'application */
-export type TabType = 'dashboard' | 'live' | 'watchlist' | 'search' | 'settings';
+export type TabType = 'dashboard' | 'movies' | 'series' | 'live' | 'watchlist' | 'search' | 'settings';
 
 /**
  * Identifiant pour naviguer vers un contenu.

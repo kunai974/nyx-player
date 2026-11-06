@@ -1,4 +1,8 @@
 {
+  "slideshow_watch": "Play",
+  "slideshow_pause": "Pause slideshow",
+  "slideshow_play": "Play slideshow",
+  "slideshow_label": "Latest movies and TV shows",
   "hero_welcome_title": "Welcome to Nyx Player",
   "hero_welcome_subtitle": "Explore our catalog of movies and series",
   "recommended_score": "Recommended {{score}}%",

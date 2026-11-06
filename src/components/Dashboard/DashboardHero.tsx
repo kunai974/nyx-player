@@ -8,6 +8,8 @@ import { getAllVersionsByTmdb } from '../../utils/lightIndexHelpers';
 import { selectBestSourceIndex } from '../../utils/sourceLanguageSelector';
 import { getAppLanguage } from '../../utils/tmdbLanguage';
 import { getMovieDetail } from '../../services/detailFetcher';
+import { findCatalogTitle } from '../../utils/catalogTitleMatch';
+import type { LatestBackdrop } from '../../hooks/useLatestBackdrops';
 
 interface DashboardHeroProps {
   heroMovies: HeroMovie[];
@@ -74,8 +76,26 @@ const DashboardHero: React.FC<DashboardHeroProps> = ({
     }
   };
 
+  // Welcome slideshow: a slide can be played when its title is in the user's catalogue
+  const welcomeMatch = (slide: LatestBackdrop) =>
+    lightIndexes ? findCatalogTitle(lightIndexes, slide.title, slide.kind, slide.year) : null;
+  const playWelcomeTitle = async (slide: LatestBackdrop) => {
+    const match = welcomeMatch(slide);
+    if (!match) return;
+    if (match.type === 'series') {
+      // A series needs an episode: its page lists them
+      navigateById('series', match.id, match.tmdbId);
+      return;
+    }
+    const movie = await getMovieDetail(match.id);
+    if (movie) void play(movie as DirectPlayableItem);
+    else navigateById('movie', match.id, match.tmdbId);
+  };
+
   return (
     <HeroBanner
+      welcomeIsAvailable={(slide) => welcomeMatch(slide) !== null}
+      onWelcomePlay={(slide) => { void playWelcomeTitle(slide); }}
       movie={heroMovie}
       loading={loading}
       isFading={isFading}

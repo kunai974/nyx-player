@@ -305,6 +305,11 @@ export function useMpvObserver(
             break;
 
           case 'time-pos': {
+            // Position unavailable = a new stream is loading (zap, next episode, other title): show the loader again
+            if (data == null && !isLoadingRef.current) {
+              isLoadingRef.current = true;
+              setIsLoading(true);
+            }
             timePosReceivedRef.current = true;
             const pos = (data as number) || 0;
             currentTimeRef.current = pos;

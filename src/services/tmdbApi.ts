@@ -19,13 +19,26 @@ const TMDB_IMAGE_BASE_URL = 'https://image.tmdb.org/t/p';
 // Proxy URL — calls go through Supabase Edge Function (TMDB key is server-side)
 const PROXY_BASE_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/tmdb-proxy`;
 
-// Fetch helper routed through Supabase proxy with JWT auth
+// ⚠ TESTING ONLY — NOT FOR PRODUCTION ⚠
+// A TMDB read token in .env (VITE_TMDB_TOKEN) makes the app call TMDB directly, without the Supabase
+// proxy. Vite bundles every VITE_ variable into the app, so the token would be readable by anyone
+// holding the build. It is therefore only honoured in development (`import.meta.env.DEV`): a
+// release build ignores it and always goes through the proxy, which keeps the real token server-side.
+const DIRECT_TMDB_TOKEN = import.meta.env.DEV
+  ? (import.meta.env.VITE_TMDB_TOKEN as string | undefined) || undefined
+  : undefined;
+if (DIRECT_TMDB_TOKEN) {
+  log.warn('TESTING ONLY: calling TMDB directly with VITE_TMDB_TOKEN (the Supabase proxy is bypassed)');
+}
+const DIRECT_TMDB_BASE_URL = 'https://api.themoviedb.org/3';
+
+// Fetch helper routed through Supabase proxy with JWT auth (or straight to TMDB, see above)
 const tmdbFetch = async <T>(endpoint: string, params: Record<string, string> = {}): Promise<T> => {
   // Get current Supabase session for JWT
-  const { data: { session } } = await supabase.auth.getSession();
-  if (!session?.access_token) throw new Error('Not authenticated — Supabase session required');
+  const session = DIRECT_TMDB_TOKEN ? null : (await supabase.auth.getSession()).data.session;
+  if (!DIRECT_TMDB_TOKEN && !session?.access_token) throw new Error('Not authenticated — Supabase session required');
 
-  const url = new URL(`${PROXY_BASE_URL}${endpoint}`);
+  const url = new URL(`${DIRECT_TMDB_TOKEN ? DIRECT_TMDB_BASE_URL : PROXY_BASE_URL}${endpoint}`);
 
   // Add default language based on current i18n setting
   params.language = params.language || getTmdbLanguage();
@@ -37,11 +50,13 @@ const tmdbFetch = async <T>(endpoint: string, params: Record<string, string> = {
   // Execute through rate limiter (client-side safety net)
   return tmdbRateLimiter.execute(async () => {
     const response = await fetch(url.toString(), {
-      headers: {
-        Authorization: `Bearer ${session.access_token}`,
-        apikey: import.meta.env.VITE_SUPABASE_ANON_KEY,
-        'Content-Type': 'application/json',
-      },
+      headers: DIRECT_TMDB_TOKEN
+        ? { Authorization: `Bearer ${DIRECT_TMDB_TOKEN}`, 'Content-Type': 'application/json' }
+        : {
+            Authorization: `Bearer ${session?.access_token}`,
+            apikey: import.meta.env.VITE_SUPABASE_ANON_KEY,
+            'Content-Type': 'application/json',
+          },
     });
 
     if (!response.ok) {
