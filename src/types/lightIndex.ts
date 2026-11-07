@@ -57,11 +57,17 @@ export interface LightCategory {
   type: 'movie' | 'series' | 'live';
 }
 
+/** Clé d'une catégorie dans `LightIndexes.categories` : le numéro seul ne suffit pas (même numéro pour un film et une chaîne chez certains fournisseurs) */
+export function categoryKey(type: LightCategory['type'], id: string): string {
+  return `${type}:${id}`;
+}
+
 /** Container for all light indexes */
 export interface LightIndexes {
   movies: Map<number, LightMovie>;       // by stream_id
   series: Map<number, LightSeries>;      // by series_id
   live: Map<number, LightLive>;          // by stream_id
+  /** Par `categoryKey(type, id)` : un même numéro peut désigner une catégorie de films et une de chaînes */
   categories: Map<string, LightCategory>;
   // TMDB lookup indexes for matching
   moviesByTmdb: Map<number, LightMovie>;  // by tmdbId

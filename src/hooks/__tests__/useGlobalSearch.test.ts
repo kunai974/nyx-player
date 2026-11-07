@@ -13,6 +13,10 @@ vi.mock('../../services/searchIndex', async (importOriginal) => {
   return { ...actual, searchContent: (...args: unknown[]) => searchContent(...args) };
 });
 vi.mock('../../services/dbCore', () => ({ getDatabase: vi.fn() }));
+const hidden = new Set<string>();
+vi.mock('../../services/hiddenCategoriesService', () => ({
+  isHidden: (id: string, type: string) => hidden.has(`${id}::${type}`),
+}));
 
 import { matchesSearch } from '../../services/searchIndex';
 import { useGlobalSearch } from '../useGlobalSearch';
@@ -113,6 +117,7 @@ describe('useGlobalSearch — titres sans numéro TMDB', () => {
 
   beforeEach(() => {
     vi.useFakeTimers();
+    hidden.clear();
     searchContent.mockReset();
     searchContent.mockImplementation(async (q: string) =>
       sansTmdb.filter((m) => matchesSearch(m.name, q)).map((m) => ({ id: m.id, name: m.name, type: 'movie' })));
@@ -127,20 +132,48 @@ describe('useGlobalSearch — titres sans numéro TMDB', () => {
     expect(result.current.results.movies.map((g) => g.representative.name)).toEqual(['Le Grand Bleu', 'Le Grand Restaurant']);
   });
 
-  it('catalogue relié à TMDB : un titre sans numéro reste hors des résultats', async () => {
-    const mixte = [movie(21, 'Le Grand Bleu', 0), movie(22, 'Le Grand Restaurant', 9876)];
+  function mixedIndexes(mixte: LightMovie[]): LightIndexes {
     searchContent.mockImplementation(async (q: string) =>
       mixte.filter((m) => matchesSearch(m.name, q)).map((m) => ({ id: m.id, name: m.name, type: 'movie' })));
-    const mixteIndexes = {
+    return {
       movies: new Map(mixte.map((m) => [m.id, m])),
-      moviesByTmdb: new Map([[9876, [22]]]),
+      moviesByTmdb: new Map(mixte.filter((m) => m.tmdbId > 0).map((m) => [m.tmdbId, [m.id]])),
       seriesByTmdb: new Map(),
       series: new Map(),
       live: new Map(),
       iconPrefixes: [],
     } as unknown as LightIndexes;
+  }
+
+  it('catalogue relié à TMDB : un titre sans numéro est aussi trouvé, après ceux qui ont une fiche', async () => {
+    const mixteIndexes = mixedIndexes([movie(21, 'Le Grand Bleu', 0), movie(22, 'Le Grand Restaurant', 9876)]);
     const { result } = renderHook(() => useGlobalSearch(mixteIndexes, 'grand'));
     await act(async () => { await vi.advanceTimersByTimeAsync(350); });
-    expect(result.current.results.movies.map((g) => g.representative.name)).toEqual(['Le Grand Restaurant']);
+    expect(result.current.results.movies.map((g) => g.representative.name)).toEqual(['Le Grand Restaurant', 'Le Grand Bleu']);
+  });
+
+  it('beaucoup de titres avec fiche : ceux sans fiche gardent un tiers des places', async () => {
+    const linked = Array.from({ length: 40 }, (_, i) => movie(100 + i, `Grand ${i}`, 1000 + i));
+    const orphans = Array.from({ length: 20 }, (_, i) => movie(200 + i, `Grand sans fiche ${i}`, 0));
+    const many = mixedIndexes([...linked, ...orphans]);
+    const { result } = renderHook(() => useGlobalSearch(many, 'grand'));
+    await act(async () => { await vi.advanceTimersByTimeAsync(350); });
+    const ids = result.current.results.movies.map((g) => g.representative.id);
+    expect(ids).toHaveLength(30);
+    expect(ids.filter((id) => id >= 200)).toHaveLength(10);
+    expect(ids.slice(0, 20)).toEqual(linked.slice(0, 20).map((m) => m.id));
+  });
+
+  it('titre sans fiche d\'une catégorie masquée par l\'utilisateur : écarté ; avec fiche : gardé comme avant', async () => {
+    hidden.add('9::movie');
+    const mixte = [
+      { ...movie(31, 'Grand Hôtel', 0), categoryId: '9' },
+      { ...movie(32, 'Grand Prix', 4321), categoryId: '9' },
+      movie(33, 'Grand Large', 0),
+    ];
+    const withHidden = mixedIndexes(mixte);
+    const { result } = renderHook(() => useGlobalSearch(withHidden, 'grand'));
+    await act(async () => { await vi.advanceTimersByTimeAsync(350); });
+    expect(result.current.results.movies.map((g) => g.representative.name)).toEqual(['Grand Prix', 'Grand Large']);
   });
 });

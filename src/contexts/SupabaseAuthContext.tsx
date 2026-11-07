@@ -14,11 +14,10 @@ import type { ReactNode } from 'react';
 import { authErrorKey, type AuthErrorKey } from '../services/authErrors';
 import { supabase } from '../services/supabaseClient';
 import { clearSignOutRequested, markSignOutRequested, wasSessionLost } from '../services/authSessionWatch';
-import { setCurrentSyncUserId } from '../services/syncService';
 import { stopCloudResync } from '../services/sync/syncScheduler';
 import { resetPreferencesCache } from '../services/preferencesService';
-import { setDatabaseName, resetDatabaseName, closeDatabaseConnection } from '../services/dbCore';
-import { setKeyringUser, resetKeyringUser } from '../services/storage';
+import { closeDatabaseConnection } from '../services/dbCore';
+import { openLocalSpace, closeLocalSpace, accountSpace, guestSpace, readGuestMode, writeGuestMode } from '../services/localSpace';
 import { resetLiveTvBookmarksCache } from '../services/liveTvBookmarksService';
 import { resetCatalogCaches } from '../services/catalogCaches';
 import { stopBackgroundWork } from '../services/backgroundWork';
@@ -29,6 +28,7 @@ import { scheduleAccountExistenceCheck } from '../services/accountExistenceCheck
 import { forgetAccountDeletionOfOtherAccount } from '../services/accountDeletion';
 import type { Session, User } from '@supabase/supabase-js';
 import { createLogger } from '../utils/logger';
+import { clearPendingTvLinkProvider } from '../services/tvLink/pendingProvider';
 
 const log = createLogger('Auth');
 
@@ -46,6 +46,17 @@ interface AuthContextType {
     isDbReady: boolean;
     /** Vrai quand Supabase a mis fin à la session sans déconnexion demandée (jeton refusé). */
     sessionExpired: boolean;
+    /** Vrai quand la personne utilise Nyx sans compte : l'espace invité de l'appareil est ouvert, rien ne part au cloud */
+    isGuest: boolean;
+    /** Change quand l'espace passe d'invité à compte sans fermeture voulue : la session IPTV doit être refermée */
+    spaceKey: number;
+    /** « Continuer sans compte » : ouvre l'espace invité de l'appareil (sans effet si un compte est connecté) */
+    enterGuestMode: () => void;
+    /**
+     * Quitte l'espace invité en gardant ses données sur l'appareil. Le fil de la session (SessionContext)
+     * doit être fermé avant (`logout`), comme pour une déconnexion.
+     */
+    leaveGuestMode: () => Promise<void>;
     /** `error` : texte brut de Supabase (journaux, délai d'attente) ; `errorKey` : message à afficher (espace `auth`) */
     signIn: (email: string, password: string) => Promise<{ error: string | null; errorKey: AuthErrorKey | null }>;
     signUp: (email: string, password: string) => Promise<{ error: string | null; errorKey: AuthErrorKey | null }>;
@@ -68,18 +79,79 @@ export const SupabaseAuthProvider: React.FC<{ children: ReactNode }> = ({ childr
     const [loading, setLoading] = useState(true);
     const [isDbReady, setIsDbReady] = useState(false);
     const [sessionExpired, setSessionExpired] = useState(false);
+    const [isGuest, setIsGuest] = useState(false);
+    const [spaceKey, setSpaceKey] = useState(0);
+    // Lus dans les rappels de Supabase et les actions : l'état d'un rendu précédent y serait périmé
+    const guestRef = useRef(false);
+    const sessionRef = useRef<Session | null>(null);
 
     // Compte pour lequel la base, le trousseau et la synchro sont déjà prêts
     const preparedUserIdRef = useRef<string | null>(null);
+
+    /** Vide ce qui appartient à l'espace ouvert (compte ou invité) avant de le fermer */
+    const closeOpenSpace = useCallback(() => {
+        resetPreferencesCache();
+        resetLiveTvBookmarksCache();
+        resetCatalogCaches(); // accueil et fiches de l'espace précédent
+        // Actualisation en arrière-plan arrêtée SANS attendre : Supabase tient parfois son verrou de session
+        void stopBackgroundWork();
+        stopCloudResync();
+        stopSyncForSessionChange(); // synchro du guide, sans effacer le guide
+        // Fermeture non attendue : le singleton est libéré tout de suite, donc l'espace suivant ouvre sa propre base
+        void closeDatabaseConnection();
+        closeLocalSpace();
+        setIsDbReady(false);
+    }, []);
+
+    const enterGuestMode = useCallback(() => {
+        if (sessionRef.current || guestRef.current) return;
+        guestRef.current = true;
+        preparedUserIdRef.current = null;
+        // Un « session expirée » resté d'un compte ne doit pas reparaître après l'espace invité
+        setSessionExpired(false);
+        // Espace invité : sa propre base et son coffre, jamais notés pour la synchro
+        openLocalSpace(guestSpace());
+        writeGuestMode(true);
+        setIsGuest(true);
+        setIsDbReady(true);
+    }, []);
+
+    const leaveGuestMode = useCallback(async () => {
+        if (!guestRef.current) return;
+        guestRef.current = false;
+        writeGuestMode(false);
+        resetPreferencesCache();
+        resetLiveTvBookmarksCache();
+        resetCatalogCaches();
+        await stopBackgroundWork();
+        stopSyncForSessionChange();
+        await closeDatabaseConnection();
+        closeLocalSpace();
+        setIsGuest(false);
+        setIsDbReady(false);
+    }, []);
 
     // ---- Init : onAuthStateChange émet INITIAL_SESSION automatiquement (SDK v2) ----
     useEffect(() => {
         const { data: { subscription } } = supabase.auth.onAuthStateChange(
             (_event, newSession) => {
+                sessionRef.current = newSession;
                 setSession(newSession);
                 setUser(newSession?.user ?? null);
                 setLoading(false);
                 setSessionExpired(!newSession && wasSessionLost());
+
+                // Lancement sans compte, après « Continuer sans compte » : l'espace invité se rouvre
+                // tout seul. Un compte connecté l'emporte : le choix invité est alors oublié.
+                if (_event === 'INITIAL_SESSION') {
+                    if (newSession?.user) writeGuestMode(false);
+                    else if (readGuestMode() && !guestRef.current) {
+                        guestRef.current = true;
+                        openLocalSpace(guestSpace());
+                        setIsGuest(true);
+                        setIsDbReady(true);
+                    }
+                }
 
                 // Phase 2 Multi-User: init DB + Keyring AVANT tout accès
                 // INITIAL_SESSION = relancement app avec session existante
@@ -96,13 +168,22 @@ export const SupabaseAuthProvider: React.FC<{ children: ReactNode }> = ({ childr
                     && preparedUserIdRef.current !== newSession.user.id;
 
                 if (needsDbInit) {
+                    // Connexion pendant l'espace invité (jamais voulue par l'écran, mais sûre) : l'espace invité
+                    // se ferme d'abord, ses données restent sur l'appareil
+                    // (cas réel : lancement hors ligne d'un compte, « sans compte » touché, puis réseau revenu).
+                    // Mêmes nettoyages qu'une fermeture d'espace, et la session IPTV de l'invité est
+                    // fermée par SessionContext (spaceKey) : ses identifiants ne passent pas au compte.
+                    if (guestRef.current) {
+                        guestRef.current = false;
+                        writeGuestMode(false);
+                        closeOpenSpace();
+                        setIsGuest(false);
+                        setSpaceKey((k) => k + 1);
+                    }
                     preparedUserIdRef.current = newSession.user.id;
-                    setDatabaseName(newSession.user.id);
-                    setKeyringUser(newSession.user.id);
+                    // Base, coffre et synchro du compte (SessionContext lance la synchro elle-même)
+                    openLocalSpace(accountSpace(newSession.user.id));
                     setIsDbReady(true);
-
-                    // Set sync userId (SessionContext handles actual syncOnLogin)
-                    setCurrentSyncUserId(newSession.user.id);
 
                     // Heartbeat fire-and-forget (stats anonymes)
                     void sendHeartbeat(newSession.user.id);
@@ -116,31 +197,20 @@ export const SupabaseAuthProvider: React.FC<{ children: ReactNode }> = ({ childr
                 // demander au serveur si le compte existe encore. Vérifié aussi au retour au premier plan
                 if ((opensSession || needsDbInit) && newSession?.user) scheduleAccountExistenceCheck(newSession.user.id);
 
-                if (_event === 'SIGNED_OUT') {
+                // Déconnexion venue du serveur (session expirée, compte fermé ailleurs) : le fournisseur
+                // reçu par QR code avec ce compte est oublié, il ne passe pas au compte suivant
+                if (_event === 'SIGNED_OUT') clearPendingTvLinkProvider();
+
+                // Sans compte, un SIGNED_OUT n'a rien à fermer : l'espace invité reste ouvert
+                if (_event === 'SIGNED_OUT' && !guestRef.current) {
                     preparedUserIdRef.current = null;
-                    // Phase 2 Multi-User: reset caches mémoire AVANT de fermer la DB
-                    resetPreferencesCache();
-                    resetLiveTvBookmarksCache();
-                    resetCatalogCaches(); // accueil et fiches du compte précédent
-                    // Actualisation en arrière-plan arrêtée SANS attendre : Supabase tient ici son
-                    // verrou de session, et une session expirée n'appelle jamais logout()
-                    void stopBackgroundWork();
-                    stopCloudResync(); // synchro relancée pendant la session (sync/syncScheduler.ts)
-                    stopSyncForSessionChange(); // synchro du guide, sans effacer le guide
-                    // Fermer DB + reset noms
-                    // Fermeture non attendue (verrou Supabase) : le singleton est libéré tout de suite, donc un
-                    // compte qui se connecte aussitôt ouvre sa propre base
-                    void closeDatabaseConnection();
-                    resetDatabaseName();
-                    resetKeyringUser();
-                    setIsDbReady(false);
-                    setCurrentSyncUserId(null);
+                    closeOpenSpace();
                 }
             }
         );
 
         return () => subscription.unsubscribe();
-    }, []);
+    }, [closeOpenSpace]);
 
     // Compte supprimé ailleurs pendant que l'app reste ouverte : Supabase ne s'en rend compte
     // qu'au renouvellement du jeton, jusqu'à une heure plus tard. Revérifié à intervalle régulier,
@@ -187,6 +257,8 @@ export const SupabaseAuthProvider: React.FC<{ children: ReactNode }> = ({ childr
     // des sessions.
     const signOut = useCallback(async () => {
         markSignOutRequested();
+        // Fournisseur reçu par QR code et pas encore utilisé : il ne passe pas au compte suivant
+        clearPendingTvLinkProvider();
         try {
             let failure: unknown = null;
             try {
@@ -206,8 +278,9 @@ export const SupabaseAuthProvider: React.FC<{ children: ReactNode }> = ({ childr
     }, []);
 
     const value = useMemo(() => ({
-        user, session, loading, isDbReady, sessionExpired, signIn, signUp, signOut,
-    }), [user, session, loading, isDbReady, sessionExpired, signIn, signUp, signOut]);
+        user, session, loading, isDbReady, sessionExpired: sessionExpired && !isGuest, isGuest, spaceKey, enterGuestMode, leaveGuestMode,
+        signIn, signUp, signOut,
+    }), [user, session, loading, isDbReady, sessionExpired, isGuest, spaceKey, enterGuestMode, leaveGuestMode, signIn, signUp, signOut]);
 
     return (
         <SupabaseAuthContext.Provider value={value}>

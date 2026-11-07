@@ -8,7 +8,7 @@
 import React, { useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import ChannelLogo from '../ChannelLogo';
-import ChannelCardDebug, { type ChannelCardDebugInfo } from '../../dev/ChannelCardDebug';
+import { prises, type ChannelCardDebugInfo } from '../../services/outilsTest';
 import { clickableProps } from '../../utils/clickable';
 import { useTvLongPress } from '../../hooks/useTvLongPress';
 import './ChannelCard.css';
@@ -57,7 +57,7 @@ const ChannelCard: React.FC<ChannelCardProps> = ({
             onDragStart={(e) => e.preventDefault()}
         >
             {/* Pastille « i » de diagnostic du guide : version de développement seulement */}
-            {import.meta.env.DEV && debugInfo && <ChannelCardDebug debugInfo={debugInfo} />}
+            {import.meta.env.DEV && debugInfo && prises.pastilleChaine && <prises.pastilleChaine debugInfo={debugInfo} />}
 
             {/* Bouton favori */}
             {onToggleFavorite && (

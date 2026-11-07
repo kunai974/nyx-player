@@ -7,7 +7,8 @@ import React, { useEffect } from 'react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, act } from '@testing-library/react';
 
-const { mpvPlay, mpvSwitchChannel, mpvStop, purgeInPlayerMode, getProgressByStreamId } = vi.hoisted(() => ({
+const { mpvPlay, mpvSwitchChannel, mpvStop, purgeInPlayerMode, getProgressByStreamId, resolveM3uPlayback } = vi.hoisted(() => ({
+    resolveM3uPlayback: vi.fn(),
     mpvPlay: vi.fn(),
     mpvSwitchChannel: vi.fn(),
     mpvStop: vi.fn(),
@@ -41,6 +42,7 @@ vi.mock('../../services/memoryService', () => ({
     exitPlayerMode: vi.fn(),
     purgeInPlayerMode,
 }));
+vi.mock('../../services/m3uCatalog', () => ({ resolveM3uPlayback }));
 vi.mock('@tauri-apps/api/core', () => ({ invoke: vi.fn().mockResolvedValue(undefined) }));
 vi.mock('../../utils/platform', () => ({ isAndroid: () => false }));
 vi.mock('../../services/player/androidPlayer', () => ({ setFullscreen: vi.fn().mockResolvedValue(undefined) }));
@@ -75,6 +77,7 @@ describe('PlayerContext — lancement et zap', () => {
         mpvStop.mockReset().mockResolvedValue(undefined);
         purgeInPlayerMode.mockReset();
         getProgressByStreamId.mockReset().mockResolvedValue(null);
+        resolveM3uPlayback.mockReset().mockResolvedValue(null);
         vi.mocked(StorageService.getCredentials).mockReset().mockResolvedValue(creds);
         consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
         render(<PlayerProvider><Harness /></PlayerProvider>);
@@ -147,6 +150,35 @@ describe('PlayerContext — lancement et zap', () => {
         // « Fermer » : plus rien n'est demandé au lecteur
         act(() => ctx.cancelFailedLaunch());
         expect(ctx.playbackError).toBeNull();
+    });
+
+    it('chaîne d\'une liste M3U : lue avec son adresse, sans identifiants Xtream', async () => {
+        vi.mocked(StorageService.getCredentials).mockResolvedValue(null);
+        resolveM3uPlayback.mockResolvedValue({ url: 'http://tv.example/live/un.m3u8', container: 'm3u8', live: true, stream: { url: 'http://tv.example/live/un.m3u8' } });
+        await act(async () => { void ctx.play(channel(3)); });
+        await advance(1000);
+
+        expect(mpvPlay).toHaveBeenCalledWith('http://tv.example/live/un.m3u8', undefined, { live: true });
+        expect(StorageService.getCredentials).not.toHaveBeenCalled();
+        expect(ctx.playbackError).toBeNull();
+    });
+
+    it('zap vers une chaîne M3U : son adresse, sans identifiants Xtream', async () => {
+        await act(async () => { void ctx.play(channel(1)); });
+        await advance(1000);
+        vi.mocked(StorageService.getCredentials).mockResolvedValue(null);
+        resolveM3uPlayback.mockResolvedValue({ url: 'http://tv.example/live/deux.ts', container: 'ts', live: true, stream: { url: 'http://tv.example/live/deux.ts' } });
+
+        await act(async () => { await ctx.switchChannel(channel(2)); });
+        expect(mpvSwitchChannel).toHaveBeenCalledWith('http://tv.example/live/deux.ts', { live: true });
+        expect(ctx.playbackError).toBeNull();
+    });
+
+    it('épisode lancé depuis « Reprendre » : la série est donnée pour trouver son adresse M3U', async () => {
+        const episode = { id: '12', episode_num: 2, title: 'E2' } as unknown as PlayableItem;
+        await act(async () => { void ctx.play(episode, undefined, 0, { seriesId: 7 }); });
+        await advance(1000);
+        expect(resolveM3uPlayback).toHaveBeenCalledWith(episode, { seriesEpisodes: undefined, seriesId: 7 });
     });
 
     it('adresse du flux impossible à construire : message affiché', async () => {

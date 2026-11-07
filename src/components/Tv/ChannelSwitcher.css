@@ -86,26 +86,28 @@
 /* La sidebar est normalement en position: fixed pour la page Live TV.
    Dans le channel switcher, on veut qu'elle soit relative dans le flex. */
 
-.channel-switcher__sidebar .tv-categories-sidebar {
-  position: relative !important;
-  left: auto !important;
-  top: auto !important;
-  bottom: auto !important;
-  width: 100% !important;
-  height: 100% !important;
-  animation: none !important;
-  border-radius: 0 !important;
-  border: none !important;
-  border-right: 1px solid var(--border-glass) !important;
-  background: rgba(10, 10, 15, 0.92) !important;
-  backdrop-filter: var(--glass-blur) !important;
-  -webkit-backdrop-filter: var(--glass-blur) !important;
+/* Trois classes (0,3,0) : l’emporte sur `.tv-categories-sidebar` et sur la surcouche
+   `.nyx-tv .tv-categories-sidebar` (0,2,0) sans `!important`. */
+.channel-switcher .channel-switcher__sidebar .tv-categories-sidebar {
+  position: relative;
+  left: auto;
+  top: auto;
+  bottom: auto;
+  width: 100%;
+  height: 100%;
+  animation: none;
+  border-radius: 0;
+  border: none;
+  border-right: 1px solid var(--border-glass);
+  background: rgba(10, 10, 15, 0.92);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
 }
 
 /* ── Override ChannelGrid dans le contexte switcher ─────────────────────── */
 
-.channel-switcher__grid .channel-grid {
-  min-height: 0 !important; /* Override le min-height: 25rem de la page Live TV */
+.channel-switcher .channel-switcher__grid .channel-grid {
+  min-height: 0; /* Override le min-height: 25rem de la page Live TV */
 }
 
 /* =========================================

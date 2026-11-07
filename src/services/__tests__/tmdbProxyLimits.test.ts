@@ -3,7 +3,7 @@
  *
  * Le relais écrit chaque réponse de TMDB dans la table `tmdb_cache`. Avant ce correctif, un compte
  * gratuit pouvait y écrire sans limite : langue inventée (`xx-XX`, 26⁴ codes), même fiche sous
- * plusieurs numéros (`550`, `0550`…), recherches libres gardées 7 jours, aucune taille maximale.
+ * plusieurs numéros (`550`, `0550`…), recherches libres gardées 7 jours (aujourd'hui : 24 h, budget à part), aucune taille maximale.
  *
  * La fonction tourne sous Deno (imports jsr:/npm:), elle ne s'importe pas telle quelle : on transpile
  * le vrai fichier et on l'exécute avec de fausses dépendances (vérification du jeton, base, TMDB).
@@ -59,6 +59,8 @@ interface RelayOptions {
   tmdb?: (url: URL) => unknown;
   /** TMDB injoignable : fetch lève une erreur qui cite l'adresse, comme Deno */
   networkDown?: boolean;
+  /** Réponse de la base aux limites des invités (public.nyx_invite_demande) ; absente : la base n'a pas l'opération */
+  rpc?: (fn: string, args: Record<string, unknown>) => Promise<unknown>;
 }
 
 /** Charge un module des fonctions serveur (transpilé en CommonJS), avec les imports simulés. */
@@ -86,10 +88,16 @@ function loadModule(path: string, external: Record<string, unknown>, globals: Re
 function loadRelay(options: RelayOptions = {}) {
   const table = new Map<string, CacheRow>((options.rows ?? []).map((r) => [r.cache_key, r]));
   const tmdbCalls: string[] = [];
+  const rpcCalls: { fn: string; args: Record<string, unknown> }[] = [];
   const logs: unknown[][] = [];
   let handler: ((req: Request) => Promise<Response>) | undefined;
 
   const fakeAdmin = {
+    async rpc(fn: string, args: Record<string, unknown>) {
+      rpcCalls.push({ fn, args });
+      if (!options.rpc) return { data: null, error: { code: 'PGRST202', message: 'function not found' } };
+      return options.rpc(fn, args);
+    },
     from(name: string) {
       if (name !== 'tmdb_cache') throw new Error(`table inattendue : ${name}`);
       return {
@@ -101,6 +109,16 @@ function loadRelay(options: RelayOptions = {}) {
           };
           return {
             eq: (_column: string, key: string) => ({ single: () => one(key), maybeSingle: () => one(key) }),
+            not: (_column: string, _op: string, pattern: string) => {
+              const prefix = pattern.replace(/%$/, '');
+              const count = [...table.keys()].filter((k) => !k.startsWith(prefix)).length;
+              return Promise.resolve({ data: null, count, error: null });
+            },
+            like: (_column: string, pattern: string) => {
+              const prefix = pattern.replace(/%$/, '');
+              const count = [...table.keys()].filter((k) => k.startsWith(prefix)).length;
+              return Promise.resolve({ data: null, count, error: null });
+            },
             then: (ok: (v: typeof all) => unknown, ko?: (e: unknown) => unknown) => Promise.resolve(all).then(ok, ko),
           };
         },
@@ -116,7 +134,9 @@ function loadRelay(options: RelayOptions = {}) {
     const url = new URL(input);
     tmdbCalls.push(`${url.pathname}${url.search}`);
     if (options.networkDown) throw new TypeError(`error sending request for url (${url.toString()})`);
-    const body = options.tmdb ? options.tmdb(url) : { path: url.pathname, page: 1 };
+    const body = options.tmdb ? options.tmdb(url) : url.pathname.includes('/search/')
+      ? { path: url.pathname, page: 1, results: [{ id: 1 }] }
+      : { path: url.pathname, page: 1 };
     return new Response(JSON.stringify(body), { status: 200, headers: { 'Content-Type': 'application/json' } });
   };
 
@@ -142,13 +162,13 @@ function loadRelay(options: RelayOptions = {}) {
   if (!handler) throw new Error('Deno.serve jamais appelé');
   const serve = handler;
 
-  const call = (path: string, token = 'compte-a') =>
+  const call = (path: string, token = 'compte-a', headers: Record<string, string> = {}) =>
     serve(
       new Request(`https://projet.supabase.co/tmdb-proxy${path}`, {
-        headers: { Authorization: `Bearer ${token}`, Origin: 'http://tauri.localhost' },
+        headers: { Authorization: `Bearer ${token}`, Origin: 'http://tauri.localhost', ...headers },
       }),
     );
-  return { call, table, tmdbCalls, logs };
+  return { call, table, tmdbCalls, rpcCalls, logs };
 }
 
 /** Plafond du cache, lu dans le module partagé du relais (même fichier que la production). */
@@ -202,7 +222,7 @@ describe('relais TMDB : usage normal de l\'app inchangé', () => {
     const movie = await relay.call('/search/movie?query=Le%20Parrain&year=1972&language=fr-FR');
     const tv = await relay.call('/search/tv?query=Dark&first_air_date_year=2017&language=fr-FR');
     expect([movie.status, tv.status]).toEqual([200, 200]);
-    expect(await movie.json()).toEqual({ path: '/3/search/movie', page: 1 });
+    expect(await movie.json()).toEqual({ path: '/3/search/movie', page: 1, results: [{ id: 1 }] });
   });
 });
 
@@ -245,13 +265,83 @@ describe('relais TMDB : un compte ne peut plus remplir le cache', () => {
     expect([...relay.table.keys()]).toEqual(['genre:12,28:movie:fr-FR']);
   });
 
-  it('ne garde pas les recherches libres en cache', async () => {
+  it('garde les recherches dans le cache, sous une clé normalisée et un budget à part', async () => {
     const relay = loadRelay();
+    const first = await relay.call('/search/movie?query=Star%20%20Wars&year=1977&language=fr-FR');
+    expect(first.headers.get('X-Cache-Status')).toBe('MISS');
+    // Même titre écrit autrement (majuscules, espaces) : même ligne, pas de nouvel appel à TMDB
+    const second = await relay.call('/search/movie?query=%20star%20wars%20&year=1977&language=fr-FR');
+    expect(second.headers.get('X-Cache-Status')).toBe('HIT');
+    expect(relay.tmdbCalls).toHaveLength(1);
+    // Autre année, autre type, autre langue : autres lignes
     await relay.call('/search/movie?query=star%20wars&language=fr-FR');
-    await relay.call('/search/movie?query=star%20wars&language=fr-FR');
-    await relay.call('/search/tv?query=Star%20Wars%201&language=fr-FR');
+    await relay.call('/search/tv?query=star%20wars&language=fr-FR');
+    await relay.call('/search/movie?query=star%20wars&year=1977&language=en-US');
+    expect([...relay.table.keys()].sort()).toEqual([
+      'search:movie:en-US:1977:star wars',
+      'search:movie:fr-FR:-:star wars',
+      'search:movie:fr-FR:1977:star wars',
+      'search:tv:fr-FR:-:star wars',
+    ]);
+  });
+
+  it('une recherche sans aucun résultat est servie mais jamais gardée', async () => {
+    const relay = loadRelay({ tmdb: () => ({ page: 1, results: [], total_results: 0 }) });
+    const res = await relay.call('/search/movie?query=titre%20qui%20nexiste%20pas&language=fr-FR');
+    expect(res.status).toBe(200);
     expect(relay.table.size).toBe(0);
-    expect(relay.tmdbCalls).toHaveLength(3);
+    await relay.call('/search/movie?query=titre%20qui%20nexiste%20pas&language=fr-FR');
+    expect(relay.tmdbCalls).toHaveLength(2);
+  });
+
+  it('une recherche trop courte ou trop longue pour un titre est servie mais jamais gardée', async () => {
+    const relay = loadRelay();
+    for (const query of ['a', 'x'.repeat(81)]) {
+      expect((await relay.call(`/search/movie?query=${query}&language=fr-FR`)).status).toBe(200);
+    }
+    expect(relay.table.size).toBe(0);
+  });
+
+  it('budget des recherches plein : servie mais pas écrite, et les fiches restent écrites', async () => {
+    const shared = loadModule(resolve(functionsRoot, '_shared/tmdbRequest.ts'), {}, {});
+    const searchMax = shared.TMDB_SEARCH_CACHE_MAX_ROWS as number;
+    const now = new Date().toISOString();
+    const full: CacheRow[] = Array.from({ length: searchMax }, (_, i) => ({
+      cache_key: `search:movie:fr-FR:-:titre ${i}`, data: {}, cached_at: now, ttl_seconds: 86400,
+    }));
+    const relay = loadRelay({ rows: full });
+    expect((await relay.call('/search/movie?query=nouveau%20titre&language=fr-FR')).status).toBe(200);
+    expect(relay.table.has('search:movie:fr-FR:-:nouveau titre')).toBe(false);
+    expect((await relay.call('/movie/550?language=fr-FR')).status).toBe(200);
+    expect(relay.table.has('movie:550:fr-FR')).toBe(true);
+  });
+
+  it('des recherches fabriquées ne réduisent pas la place des fiches (plafond général compté sans elles)', async () => {
+    const shared = loadModule(resolve(functionsRoot, '_shared/tmdbRequest.ts'), {}, {});
+    const searchMax = shared.TMDB_SEARCH_CACHE_MAX_ROWS as number;
+    const now = new Date().toISOString();
+    const searches: CacheRow[] = Array.from({ length: searchMax }, (_, i) => ({
+      cache_key: `search:movie:fr-FR:-:titre ${i}`, data: {}, cached_at: now, ttl_seconds: 86400,
+    }));
+    // Autant de fiches que le plafond général moins une : la dernière place doit rester libre malgré les recherches
+    const relay = loadRelay({ rows: [...searches, ...rows(cacheMaxRows() - 1)] });
+    expect((await relay.call('/movie/999999?language=fr-FR')).status).toBe(200);
+    expect(relay.table.has('movie:999999:fr-FR')).toBe(true);
+  });
+
+  it('une recherche périmée est rafraîchie même budget plein, sans ligne en plus', async () => {
+    const shared = loadModule(resolve(functionsRoot, '_shared/tmdbRequest.ts'), {}, {});
+    const searchMax = shared.TMDB_SEARCH_CACHE_MAX_ROWS as number;
+    const now = new Date().toISOString();
+    const full: CacheRow[] = Array.from({ length: searchMax }, (_, i) => ({
+      cache_key: `search:movie:fr-FR:-:titre ${i}`, data: { vieux: true }, cached_at: now, ttl_seconds: 86400,
+    }));
+    full[0] = { ...full[0], cached_at: '2026-01-01T00:00:00.000Z' };
+    const relay = loadRelay({ rows: full });
+    const res = await relay.call('/search/movie?query=titre%200&language=fr-FR');
+    expect(res.headers.get('X-Cache-Status')).toBe('MISS');
+    expect(relay.table.size).toBe(searchMax);
+    expect(relay.table.get('search:movie:fr-FR:-:titre 0')?.cached_at).not.toBe('2026-01-01T00:00:00.000Z');
   });
 
   it('cache plein : la fiche est servie mais n\'est plus écrite', async () => {
@@ -291,10 +381,10 @@ describe('relais TMDB : journaux sans recherche ni adresse', () => {
   });
 });
 
-describe('relais TMDB : seulement des comptes connectés', () => {
-  it('refuse un jeton de connexion anonyme', async () => {
+describe('relais TMDB : comptes connectés, et invités dans leurs limites', () => {
+  it('refuse un invité tant que la base n\'a pas les limites des invités (fermé par défaut)', async () => {
     const relay = loadRelay();
-    expect((await relay.call('/movie/550?language=fr-FR', 'anonyme')).status).toBe(401);
+    expect((await relay.call('/movie/550?language=fr-FR', 'anonyme')).status).toBe(503);
     expect(relay.tmdbCalls).toEqual([]);
   });
 
@@ -307,4 +397,90 @@ describe('relais TMDB : seulement des comptes connectés', () => {
     const relay = loadRelay();
     expect((await relay.call('/movie/550?language=fr-FR', 'faux')).status).toBe(401);
   });
+});
+
+describe('relais TMDB : invités (connexion anonyme), limites tenues par la base', () => {
+  const allowed = async () => ({ data: { allowed: true }, error: null });
+
+  it('sert un invité quand la base dit oui, et demande pour CET invité et cette adresse', async () => {
+    const relay = loadRelay({ rpc: allowed });
+    const res = await relay.call('/movie/550?language=fr-FR', 'anonyme', { 'cf-connecting-ip': '192.0.2.7' });
+    expect(res.status).toBe(200);
+    expect(relay.rpcCalls).toEqual([{ fn: 'nyx_invite_demande', args: { p_invite: 'x', p_adresse: '192.0.2.7' } }]);
+    expect(relay.tmdbCalls).toHaveLength(1);
+  });
+
+  it('compte aussi une réponse déjà en cache (chaque appel coûte au quota)', async () => {
+    const relay = loadRelay({ rpc: allowed });
+    await relay.call('/movie/550?language=fr-FR', 'anonyme');
+    await relay.call('/movie/550?language=fr-FR', 'anonyme');
+    expect(relay.rpcCalls).toHaveLength(2);
+    expect(relay.tmdbCalls).toHaveLength(1);
+  });
+
+  it.each([
+    ['minute', '2026-11-02T10:01:00Z'],
+    ['day', '2026-11-03T00:00:00Z'],
+    ['address', '2026-11-03T00:00:00Z'],
+    ['budget', '2026-11-03T00:00:00Z'],
+    ['off', '2026-11-03T00:00:00Z'],
+  ])('refus « %s » : 429 avec la raison et l\'heure de reprise, sans appeler TMDB', async (reason, retryAt) => {
+    const relay = loadRelay({ rpc: async () => ({ data: { allowed: false, reason, retry_at: retryAt }, error: null }) });
+    const res = await relay.call('/movie/550?language=fr-FR', 'anonyme');
+    expect(res.status).toBe(429);
+    expect(await res.json()).toEqual({ error: 'Guest limit reached', reason, retry_at: retryAt });
+    expect(Number(res.headers.get('Retry-After'))).toBeGreaterThanOrEqual(1);
+    expect(relay.tmdbCalls).toEqual([]);
+  });
+
+  it.each([
+    ['une erreur de la base', async () => ({ data: null, error: { message: 'boom' } })],
+    ['une réponse vide', async () => ({ data: null, error: null })],
+    ['un « allowed » qui n\'est pas exactement vrai', async () => ({ data: { allowed: 'true' }, error: null })],
+    ['une exception', async () => { throw new Error('réseau'); }],
+  ])('refuse l\'invité sur %s (jamais une demande sans être comptée)', async (_cas, rpc) => {
+    const relay = loadRelay({ rpc: rpc as RelayOptions['rpc'] });
+    expect((await relay.call('/movie/550?language=fr-FR', 'anonyme')).status).toBe(503);
+    expect(relay.tmdbCalls).toEqual([]);
+  });
+
+  it('invité effacé par la purge (jeton encore signé) : 401, l\'app se reconnecte au lieu de réessayer', async () => {
+    const relay = loadRelay({ rpc: async () => ({ data: { allowed: false, reason: 'unknown' }, error: null }) });
+    expect((await relay.call('/movie/550?language=fr-FR', 'anonyme')).status).toBe(401);
+    expect(relay.tmdbCalls).toEqual([]);
+  });
+
+  it('un compte connecté ne passe jamais par les limites des invités', async () => {
+    const relay = loadRelay();
+    expect((await relay.call('/movie/550?language=fr-FR', 'compte-a')).status).toBe(200);
+    expect(relay.rpcCalls).toEqual([]);
+  });
+
+  it('les journaux ne citent ni l\'adresse ni l\'invité', async () => {
+    const relay = loadRelay({ rpc: async () => ({ data: null, error: { message: 'boom' } }) });
+    await relay.call('/movie/550?language=fr-FR', 'anonyme', { 'cf-connecting-ip': '192.0.2.77' });
+    const written = JSON.stringify(relay.logs);
+    expect(written).not.toContain('192.0.2.77');
+    expect(written).not.toContain('"x"');
+  });
+});
+
+describe('relais TMDB : un invité qui insiste au-delà de 60 par minute', () => {
+  it('est arrêté avant d\'interroger la base (chaque appel à la base coûte aussi)', async () => {
+    const relay = loadRelay({ rpc: async () => ({ data: { allowed: false, reason: 'minute', retry_at: null }, error: null }) });
+    for (let i = 0; i < 60; i++) await relay.call('/movie/550?language=fr-FR', 'anonyme');
+    expect(relay.rpcCalls).toHaveLength(60);
+    expect((await relay.call('/movie/550?language=fr-FR', 'anonyme')).status).toBe(429);
+    expect(relay.rpcCalls).toHaveLength(60);
+  });
+});
+
+describe('relais TMDB : base trop lente pour un invité', () => {
+  it('refuse l\'invité après 3 s sans réponse de la base, sans appeler TMDB', async () => {
+    const relay = loadRelay({ rpc: () => new Promise(() => {}) });
+    const started = Date.now();
+    expect((await relay.call('/movie/550?language=fr-FR', 'anonyme')).status).toBe(503);
+    expect(Date.now() - started).toBeGreaterThanOrEqual(2900);
+    expect(relay.tmdbCalls).toEqual([]);
+  }, 8000);
 });

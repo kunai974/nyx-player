@@ -36,9 +36,11 @@
     background var(--duration-fast) var(--ease-out);
 }
 
-.nyx-dropdown__trigger:hover:not(:disabled) {
-  border-color: var(--border-strong);
-  background: var(--hover-overlay);
+@media (hover: hover) {
+  .nyx-dropdown__trigger:hover:not(:disabled) {
+    border-color: var(--border-strong);
+    background: var(--hover-overlay);
+  }
 }
 
 .nyx-dropdown--open .nyx-dropdown__trigger {
@@ -131,10 +133,16 @@
   user-select: none;
 }
 
-.nyx-dropdown__item:hover,
 .nyx-dropdown__item--focused {
   background: rgba(255, 255, 255, 0.06);
   color: var(--text-primary);
+}
+
+@media (hover: hover) {
+  .nyx-dropdown__item:hover {
+    background: rgba(255, 255, 255, 0.06);
+    color: var(--text-primary);
+  }
 }
 
 /* Choix actif : texte blanc sur un léger fond bleu, la coche reste bleue. Le texte bleu (#5e6fea) ne
@@ -144,10 +152,16 @@
   background: var(--nyx-blue-subtle);
 }
 
-.nyx-dropdown__item--active:hover,
 .nyx-dropdown__item--active.nyx-dropdown__item--focused {
   color: var(--text-primary);
   background: var(--nyx-blue-hover);
+}
+
+@media (hover: hover) {
+  .nyx-dropdown__item--active:hover {
+    color: var(--text-primary);
+    background: var(--nyx-blue-hover);
+  }
 }
 
 /* ---- Check indicator ---- */

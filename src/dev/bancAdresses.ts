@@ -57,6 +57,18 @@ export function natureAdresse(adresse: unknown): NatureAdresse {
   return 'autre';
 }
 
+/**
+ * Faux relais TMDB des versions du banc (VITE_BANC=1 seulement) : celui que sert le faux fournisseur
+ * de la source (audit/nyx/faux-fournisseur/tmdb.mjs, sous /__tmdb), au lieu du relais de production
+ * (chaque appel du banc comptait dans le quota de Supabase). Rien si la source n'est pas un faux
+ * fournisseur : la version du banc ne demande alors rien à TMDB, jamais à la production.
+ */
+export function adresseRelaisTmdbBanc(source: { host: string } | null): string | null {
+  if (!source) return null;
+  const hote = source.host.replace(/\/+$/, '');
+  return natureAdresse(hote) === 'faux' ? `${hote}/__tmdb` : null;
+}
+
 /** Erreur rendue par le verrou : reconnaissable à son code, sans l'adresse. */
 export function erreurLectureRefusee(): Error & { code: string } {
   return Object.assign(new Error(`${BANC_LECTURE_REFUSEE} : adresse hors du faux fournisseur`), {

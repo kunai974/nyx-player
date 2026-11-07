@@ -6,7 +6,7 @@
 //! Isolation totale : AUCUN lien avec catalog_parser.rs ou ingestion.rs.
 
 use crate::http::build_http_client;
-use crate::storage::{validate_db_name, sanitize_error_path, sanitize_url_for_log};
+use crate::storage::{catalog_deletion_pending, validate_catalog_db_name, sanitize_error_path, sanitize_url_for_log, SOURCE_CATALOG_DELETED};
 use rusqlite::{params, Connection};
 use std::io::BufReader;
 use std::sync::OnceLock;
@@ -991,7 +991,7 @@ fn insert_epg_channels(
 
 /// Supprime les diacritiques/accents courants (sans dépendance externe).
 /// "Cinéma" → "Cinema", "Série" → "Serie", "Télé" → "Tele"
-fn strip_accents(s: &str) -> String {
+pub(crate) fn strip_accents(s: &str) -> String {
     s.chars().map(|c| match c {
         'à' | 'á' | 'â' | 'ã' | 'ä' | 'å' => 'a',
         'è' | 'é' | 'ê' | 'ë' => 'e',
@@ -1448,7 +1448,7 @@ fn write_channel_links(conn: &Connection, updates: &[(i64, String, String)], res
 
 #[tauri::command]
 pub async fn remap_epg(app: tauri::AppHandle, db_name: String) -> Result<(), String> {
-    validate_db_name(&db_name)?;
+    validate_catalog_db_name(&db_name)?;
     // A background catalogue refresh gives way to the remap (db_activity.rs)
     let _heavy = crate::db_activity::HeavyWriteGuard::new();
     log::info!("[EPG] Background remap triggered by frontend.");
@@ -1476,6 +1476,10 @@ pub async fn remap_epg(app: tauri::AppHandle, db_name: String) -> Result<(), Str
     // Run all synchronous SQLite work on a blocking thread to avoid stalling the tokio runtime
     // Waits for a catalogue write or a guide sync writing the same links
     let _turn = crate::db_activity::exclusive_write().await;
+    // Source supprimée pendant l'attente : son fichier n'est pas recréé
+    if catalog_deletion_pending(&db_path) {
+        return Err(SOURCE_CATALOG_DELETED.to_string());
+    }
     let epg_programs_count = tokio::task::spawn_blocking(move || {
         let conn = Connection::open(&db_path)
             .map_err(|e| sanitize_error_path(format!("Failed to open DB for remapping: {}", e)))?;
@@ -1688,7 +1692,7 @@ pub async fn fetch_and_parse_epg(
     db_name: String,
     dns_provider: String,
 ) -> Result<EpgIngestResult, String> {
-    validate_db_name(&db_name)?;
+    validate_catalog_db_name(&db_name)?;
     // Two syncs would share the temporary file and the staging table
     if EPG_RUNNING.swap(true, Ordering::AcqRel) {
         log::warn!("[EPG] A guide sync is already running: second one refused");
@@ -1785,6 +1789,10 @@ pub async fn fetch_and_parse_epg(
 
     // Programs and channel links are written below: waits for a catalogue write or a remap
     let turn = crate::db_activity::exclusive_write().await;
+    // Source supprimée pendant le téléchargement : son fichier n'est pas recréé
+    if catalog_deletion_pending(&db_path) {
+        return Err(SOURCE_CATALOG_DELETED.to_string());
+    }
     let result = tokio::task::spawn_blocking(move || {
         use std::io::BufRead;
         let file = std::fs::File::open(&tmp_for_task)

@@ -105,8 +105,10 @@
     height: 0.75rem;
 }
 
-.binge-popup-close:hover {
-    background: rgba(0, 0, 0, 0.85);
+@media (hover: hover) {
+  .binge-popup-close:hover {
+      background: rgba(0, 0, 0, 0.85);
+  }
 }
 
 /* Body — padding zone for content + footer */
@@ -222,7 +224,9 @@
     transition: all var(--duration-fast) var(--ease-out);
 }
 
-.binge-popup-play:hover {
-    filter: brightness(1.15);
-    box-shadow: 0 0.25rem 0.75rem var(--focus-ring);
+@media (hover: hover) {
+  .binge-popup-play:hover {
+      filter: brightness(1.15);
+      box-shadow: 0 0.25rem 0.75rem var(--focus-ring);
+  }
 }

@@ -4,6 +4,7 @@
  * Cache TMDB seulement par défaut : aucun appel réseau, aucun état « chargement ».
  */
 
+import tmdb from './tmdbApi';
 import type { HeroMovie } from '../types/dashboard';
 import type { LightIndexes } from '../types/lightIndex';
 import type { TmdbTrendingResult } from '../types/tmdb';
@@ -104,6 +105,7 @@ async function rematchHeroes(
 ): Promise<HeroMovie[]> {
   if (!rawTrending) return remapHeroes(current, indexes);
 
+  if (import.meta.env.VITE_BANC === '1') await tmdb.prepareBancImages();
   const candidates = buildHeroCandidates(trending, indexes, rawTrending, DASHBOARD_HERO_COUNT);
   // Logos déjà connus repris tels quels : pas d'appel réseau pour les films déjà affichés
   const knownLogos = new Map<number, string>();

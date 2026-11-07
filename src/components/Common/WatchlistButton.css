@@ -91,17 +91,23 @@
 }
 
 /* ================= HOVER ================= */
-.watchlist-btn:hover {
-  background-color: rgba(255, 255, 255, 0.15);
-  border-color: var(--border-default);
-  transform: scale(1.1);
+@media (hover: hover) {
+  .watchlist-btn:hover {
+    background-color: rgba(255, 255, 255, 0.15);
+    border-color: var(--border-default);
+    transform: scale(1.1);
+  }
 }
 
-.watchlist-btn--md:hover {
-  box-shadow: var(--shadow-md);
+@media (hover: hover) {
+  .watchlist-btn--md:hover {
+    box-shadow: var(--shadow-md);
+  }
 }
 
-.watchlist-btn--added:hover {
-  background: rgba(255, 255, 255, 0.25);
-  box-shadow: 0 0 1.5625rem rgba(255, 255, 255, 0.2);
+@media (hover: hover) {
+  .watchlist-btn--added:hover {
+    background: rgba(255, 255, 255, 0.25);
+    box-shadow: 0 0 1.5625rem rgba(255, 255, 255, 0.2);
+  }
 }

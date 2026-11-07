@@ -6,6 +6,7 @@
 
 import { describe, it, expect, vi } from 'vitest';
 import { buildLightIndexesFromSQLite } from '../lightIndexBuilder';
+import { categoryKey } from '../../types/lightIndex';
 import type { MovieRow, SeriesRow, LiveRow, CategoryRow } from '../../types/repositories';
 
 // ─── Mock devLog ────────────────────────────────────────────────────
@@ -139,9 +140,20 @@ describe('buildLightIndexesFromSQLite', () => {
     const result = buildLightIndexesFromSQLite([], [], [], categories);
 
     expect(result.categories.size).toBe(3);
-    expect(result.categories.get('10')).toEqual({ id: '10', name: 'Action', type: 'movie' });
-    expect(result.categories.get('20')).toEqual({ id: '20', name: 'Drama', type: 'series' });
-    expect(result.categories.get('30')).toEqual({ id: '30', name: 'News', type: 'live' });
+    expect(result.categories.get(categoryKey('movie', '10'))).toEqual({ id: '10', name: 'Action', type: 'movie' });
+    expect(result.categories.get(categoryKey('series', '20'))).toEqual({ id: '20', name: 'Drama', type: 'series' });
+    expect(result.categories.get(categoryKey('live', '30'))).toEqual({ id: '30', name: 'News', type: 'live' });
+  });
+
+  // Fournisseur qui numérote chaque type à part (retour Reddit du 02/11 : chaînes visibles, films et séries vides)
+  it('même numéro pour un film, une série et une chaîne : les trois catégories restent', () => {
+    const categories: CategoryRow[] = [
+      makeCategory({ id: '1', name: 'Films FR', type: 'movie' }),
+      makeCategory({ id: '1', name: 'Séries FR', type: 'series' }),
+      makeCategory({ id: '1', name: 'TNT', type: 'live' }),
+    ];
+    const result = buildLightIndexesFromSQLite([], [], [], categories);
+    expect([...result.categories.values()].map((c) => `${c.type} ${c.name}`)).toEqual(['movie Films FR', 'series Séries FR', 'live TNT']);
   });
 
   // ── Test 6: TMDB lookup index ──

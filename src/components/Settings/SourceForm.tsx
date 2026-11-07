@@ -1,5 +1,5 @@
 /**
- * SourceForm — Formulaire d'édition des credentials IPTV (Xtream Codes / Lien Xtream).
+ * SourceForm — Formulaire d'édition de la source IPTV (Xtream Codes, ou lien M3U : liste M3U ou lien Xtream).
  *
  * L'état d'édition est piloté par le parent via `isEditing`.
  * Gère les useState du formulaire, les handlers save/cancel,
@@ -10,7 +10,10 @@ import React, { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { XtreamCredentials } from '../../types/iptv';
 import NyxButton from '../Common/NyxButton';
-import { readM3uParam, splitPastedXtreamAddress } from '../../utils/xtreamCredentials';
+import { splitPastedXtreamAddress } from '../../utils/xtreamCredentials';
+import { credentialsFromM3uLink, isM3uListCredentials } from '../../services/sources/m3uListCredentials';
+import { isLocalM3uUrl, localM3uFileName } from '../../services/sources/m3uLocalAddress';
+import LocalM3uFileButton from '../Common/LocalM3uFileButton';
 import { normalizeProviderHost } from '../../utils/providerHost';
 import { isProviderCertificateError, isProviderServerError } from '../../services/networkService';
 import { isCredentialsRejectedError, isProviderAccountInactiveError, isProviderHtmlResponseError } from '../../services/xtreamApi';
@@ -37,10 +40,14 @@ const SourceForm: React.FC<SourceFormProps> = ({
     const { t } = useTranslation(['settings', 'auth']);
 
     // Form state (internal)
-    const [sourceMode, setSourceMode] = useState<'xtream' | 'm3u'>('xtream');
-    const [editHost, setEditHost] = useState(credentials.host);
+    // Source actuelle : liste M3U (adresse dans l'onglet M3U) ou abonnement Xtream (champs Xtream)
+    const m3uList = isM3uListCredentials(credentials) ? credentials.m3u : null;
+    const initialMode: 'xtream' | 'm3u' = m3uList ? 'm3u' : 'xtream';
+    const [sourceMode, setSourceMode] = useState<'xtream' | 'm3u'>(initialMode);
+    const [editHost, setEditHost] = useState(m3uList ? '' : credentials.host);
     const [editUsername, setEditUsername] = useState(credentials.username);
     const [editPassword, setEditPassword] = useState(credentials.password);
+    // Adresse de la liste jamais réaffichée (elle porte souvent un jeton) : recollée pour la changer
     const [editM3uLink, setEditM3uLink] = useState('');
     const [isSaving, setIsSaving] = useState(false);
     const [formError, setFormError] = useState<string | null>(null);
@@ -48,35 +55,32 @@ const SourceForm: React.FC<SourceFormProps> = ({
     // Sync form fields when credentials change externally
     useEffect(() => {
         // eslint-disable-next-line react-hooks/set-state-in-effect -- formulaire recopié quand les identifiants enregistrés changent (après une modification réussie)
-        setEditHost(credentials.host);
+        setEditHost(isM3uListCredentials(credentials) ? '' : credentials.host);
         setEditUsername(credentials.username);
         setEditPassword(credentials.password);
+        setEditM3uLink('');
+        setSourceMode(isM3uListCredentials(credentials) ? 'm3u' : 'xtream');
     }, [credentials]);
 
     // =========== HANDLERS ===========
-    const handleSaveCredentials = async () => {
+    const handleSaveCredentials = async (fromFile?: XtreamCredentials) => {
         if (!onCredentialsChange) return;
         setFormError(null);
 
         let newCreds: XtreamCredentials;
 
-        if (sourceMode === 'm3u') {
-            try {
-                const url = new URL(editM3uLink);
-                const host = normalizeProviderHost(`${url.protocol}//${url.host}`);
-                // « + » gardé tel quel dans les identifiants
-                const username = readM3uParam(url, 'username');
-                const password = readM3uParam(url, 'password');
-
-                if (!host || !username || !password) {
-                    setFormError(t('error_missing_fields') + ' (username/password)');
-                    return;
-                }
-                newCreds = { host, username, password };
-            } catch {
-                setFormError(t('error_invalid_m3u'));
+        if (fromFile) {
+            // Fichier M3U de l'appareil, déjà recopié dans l'app
+            newCreds = fromFile;
+        } else if (sourceMode === 'm3u') {
+            // Lien Xtream (identifiants dans le lien) ou liste M3U
+            const parsed = credentialsFromM3uLink(editM3uLink);
+            if ('error' in parsed) {
+                if (parsed.error === 'missing_info') setFormError(t('error_missing_fields') + ' (username/password)');
+                else setFormError(t(parsed.error === 'too_long' ? 'auth:error_m3u_too_long' : 'error_invalid_m3u'));
                 return;
             }
+            newCreds = parsed.creds;
         } else {
             // Adresse complète collée (`…/player_api.php?username=…`) : le serveur seul, et les
             // identifiants qu'elle contient pour les champs laissés vides
@@ -111,14 +115,29 @@ const SourceForm: React.FC<SourceFormProps> = ({
     const handleCancelEdit = () => {
         onEditingChange(false);
         setFormError(null);
-        setEditHost(credentials.host);
+        setEditHost(isM3uListCredentials(credentials) ? '' : credentials.host);
         setEditUsername(credentials.username);
         setEditPassword(credentials.password);
         setEditM3uLink('');
-        setSourceMode('xtream');
+        setSourceMode(isM3uListCredentials(credentials) ? 'm3u' : 'xtream');
     };
 
     // =========== RENDER ===========
+    if (!isEditing && m3uList) {
+        // Liste M3U : son hôte seul (l'adresse complète peut contenir un jeton)
+        return (
+            <div className="info-grid">
+                <div className="info-item">
+                    <div className="info-label">{t('m3u_list')}</div>
+                    <div className="info-value" data-testid="settings-provider-m3u-host">
+                        {isLocalM3uUrl(m3uList.url)
+                            ? t('m3u_local_file', { name: localM3uFileName(m3uList.url) })
+                            : credentials.host.replace(/^m3u:/, '')}
+                    </div>
+                </div>
+            </div>
+        );
+    }
     if (!isEditing) {
         return (
             <div className="info-grid">
@@ -201,10 +220,17 @@ const SourceForm: React.FC<SourceFormProps> = ({
                             value={editM3uLink}
                             data-testid="settings-provider-m3u-link"
                             onChange={(e) => setEditM3uLink(e.target.value)}
-                            placeholder="http://.../get.php?username=...&password=..."
+                            placeholder="http://..."
                             rows={3}
                         />
                         <p className="field-hint">{t('m3u_hint')}</p>
+                        {/* Ou une liste posée sur l'appareil (ordinateur, téléphone) */}
+                        <LocalM3uFileButton
+                            testId="settings-provider-m3u-file"
+                            disabled={isSaving}
+                            onError={setFormError}
+                            onImported={(creds) => handleSaveCredentials(creds)}
+                        />
                     </div>
                 </div>
             )}

@@ -14,6 +14,7 @@ vi.mock('react-i18next', () => ({
   }),
 }));
 vi.mock('../WatchlistPage.css', () => ({}));
+vi.mock('../../utils/appNotice', () => ({ showAppNotice: vi.fn() }));
 vi.mock('@formkit/auto-animate/react', () => ({ useAutoAnimate: () => [vi.fn()] }));
 
 vi.mock('../../contexts/DevOverrideContext', () => ({
@@ -67,6 +68,7 @@ import {
 import { getProgressByTmdbIds } from '../../services/playbackProgressService';
 import { PLAYBACK_EVENT } from '../../services/eventConstants';
 import { setTvMode } from '../../utils/platform';
+import { showAppNotice } from '../../utils/appNotice';
 
 const indexes = {} as LightIndexes;
 
@@ -192,6 +194,16 @@ describe('WatchlistPage', () => {
       const cartes = await screen.findAllByTestId('watchlist-card');
       fireEvent.click(cartes[1]);
       expect(onNavigateToContent).toHaveBeenCalledWith('series', { tmdbId: 200, seriesId: 2 });
+    });
+
+    it('affiche un message et garde le titre quand la base refuse le retrait', async () => {
+      const { onNavigateToContent } = setup();
+      const cartes = await screen.findAllByTestId('watchlist-card');
+      vi.mocked(removeFromWatchlist).mockRejectedValue(new Error('database is locked'));
+      fireEvent.click(within(cartes[0]).getByTestId('watchlist-card-remove'));
+      await waitFor(() => expect(showAppNotice).toHaveBeenCalledWith('watchlist_update_failed'));
+      expect(screen.getAllByTestId('watchlist-card')).toHaveLength(2);
+      expect(onNavigateToContent).not.toHaveBeenCalled();
     });
 
     it('retire un titre sans ouvrir sa fiche puis recharge la liste', async () => {

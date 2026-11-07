@@ -37,9 +37,11 @@
   transition: all 0.2s ease;
 }
 
-.settings-page .back-button:hover {
-  background: rgba(255, 255, 255, 0.15);
-  transform: translateX(-3px);
+@media (hover: hover) {
+  .settings-page .back-button:hover {
+    background: rgba(255, 255, 255, 0.15);
+    transform: translateX(-3px);
+  }
 }
 
 /* Settings Content */
@@ -524,8 +526,10 @@
   transition: all var(--duration-fast) var(--ease-out);
 }
 
-.source-tab:hover {
-  background: rgba(255, 255, 255, 0.08);
+@media (hover: hover) {
+  .source-tab:hover {
+    background: rgba(255, 255, 255, 0.08);
+  }
 }
 
 .source-tab.active {
@@ -679,9 +683,11 @@
   transition: color var(--duration-fast) var(--ease-out);
 }
 
-.about-changelog-link:hover {
-  color: var(--nyx-violet);
-  text-decoration: underline;
+@media (hover: hover) {
+  .about-changelog-link:hover {
+    color: var(--nyx-violet);
+    text-decoration: underline;
+  }
 }
 
 .about-update-check__result {
@@ -749,9 +755,11 @@
   transition: color var(--duration-fast) var(--ease-out);
 }
 
-.legal-link:hover {
-  color: var(--nyx-blue-light);
-  text-decoration: underline;
+@media (hover: hover) {
+  .legal-link:hover {
+    color: var(--nyx-blue-light);
+    text-decoration: underline;
+  }
 }
 
 .legal-link-separator {
@@ -838,8 +846,10 @@
   transition: color var(--duration-fast) var(--ease-out);
 }
 
-.about-report-bug__cancel:hover {
-  color: var(--text-primary);
+@media (hover: hover) {
+  .about-report-bug__cancel:hover {
+    color: var(--text-primary);
+  }
 }
 
 .about-report-bug__sent {
@@ -934,8 +944,10 @@
   transition: background var(--duration-fast) var(--ease-out);
 }
 
-.setting-item:hover {
-  background: var(--hover-overlay);
+@media (hover: hover) {
+  .setting-item:hover {
+    background: var(--hover-overlay);
+  }
 }
 
 .setting-item--form {
@@ -948,8 +960,10 @@
   border: 1px solid var(--nyx-violet-border);
 }
 
-.setting-item--form:hover {
-  background: var(--nyx-violet-subtle);
+@media (hover: hover) {
+  .setting-item--form:hover {
+    background: var(--nyx-violet-subtle);
+  }
 }
 
 .setting-item__info {
@@ -972,6 +986,7 @@
 
 /* Settings Separator */
 .settings-separator {
+  /* stylelint-disable-next-line defensive-css/no-fixed-sizes -- filet de 1 px : trait fin voulu */
   height: 1px;
   background: var(--border-subtle);
   margin: var(--space-3) 0;
@@ -1056,8 +1071,10 @@
   justify-content: center;
 }
 
-.settings-input-eye:hover {
-  opacity: 1;
+@media (hover: hover) {
+  .settings-input-eye:hover {
+    opacity: 1;
+  }
 }
 
 /* Hide native browser password reveal button (Edge, Chrome) */

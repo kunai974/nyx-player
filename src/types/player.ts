@@ -9,6 +9,14 @@
 import type { XtreamEpisode, XtreamMovie } from './xtream';
 import type { IptvStream } from './iptv';
 
+/** Adresse de lecture d'une entrée de liste M3U, prise dans le catalogue (pas d'identifiants Xtream) */
+export interface M3uStream {
+  url: string;
+  /** En-têtes demandés par la liste pour ce flux (gardés pour un usage futur du lecteur) */
+  userAgent?: string;
+  referrer?: string;
+}
+
 // ============================================================================
 // PLAYABLE ITEM TYPES
 // ============================================================================

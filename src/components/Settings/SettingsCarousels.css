@@ -96,8 +96,10 @@
     user-select: none;
 }
 
-.toggle-chip:hover:not(.disabled) {
-    background: var(--active-overlay);
+@media (hover: hover) {
+  .toggle-chip:hover:not(.disabled) {
+      background: var(--active-overlay);
+  }
 }
 
 /* Grossissement au survol (remplace framer-motion) : pointeur seulement, pas au toucher */
@@ -123,8 +125,10 @@
     box-shadow: var(--shadow-sm);
 }
 
-.toggle-chip.active:hover:not(.disabled) {
-    background: rgba(74, 74, 208, 0.3);
+@media (hover: hover) {
+  .toggle-chip.active:hover:not(.disabled) {
+      background: rgba(74, 74, 208, 0.3);
+  }
 }
 
 .toggle-chip.disabled {
@@ -227,9 +231,11 @@
     overflow: hidden;
 }
 
-.genre-tile:hover {
-    background: var(--hover-overlay);
-    border-color: var(--border-strong);
+@media (hover: hover) {
+  .genre-tile:hover {
+      background: var(--hover-overlay);
+      border-color: var(--border-strong);
+  }
 }
 
 .genre-tile:active {

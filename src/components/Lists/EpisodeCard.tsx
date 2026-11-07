@@ -12,6 +12,7 @@ import { clearProgress } from '../../services/playbackProgressService';
 import { useTvLongPress } from '../../hooks/useTvLongPress';
 import { clickableProps } from '../../utils/clickable';
 import { warnOnReject } from '../../utils/warnOnReject';
+import { showAppNotice } from '../../utils/appNotice';
 
 /** Données TMDB d'un épisode (optionnel) */
 export interface TmdbEpisodeData {
@@ -73,6 +74,11 @@ export const EpisodeCard: React.FC<EpisodeCardProps> = ({
         setLocalProgress(progress);
     }
 
+    // Image de l'épisode, puis l'affiche de la série ; aucune qui charge : la vignette reste un fond uni
+    // (jamais l'icône d'image cassée avec le texte de remplacement en haut)
+    const [failedImages, setFailedImages] = useState<string[]>([]);
+    const shownImage = [imageUrl, posterFallback].find((url) => url && !failedImages.includes(url));
+
     // Données avec fallbacks TMDB → Xtream
     const episodeTitle = tmdbEpisode?.name || episode.title || '';
     const synopsis = tmdbEpisode?.overview || '';
@@ -83,9 +89,15 @@ export const EpisodeCard: React.FC<EpisodeCardProps> = ({
         e?.stopPropagation();
         const contentId = episode.id || episode.title;
         if (contentId) {
-            clearProgress(contentId).catch(warnOnReject('EpisodeCard'));
+            const previous = localProgress;
             setLocalProgress(0);
-            onProgressReset?.();
+            clearProgress(contentId).then(() => {
+                onProgressReset?.();
+            }).catch((err) => {
+                warnOnReject('EpisodeCard')(err);
+                setLocalProgress(previous);
+                showAppNotice('progress_reset_failed');
+            });
         }
     };
 
@@ -111,16 +123,15 @@ export const EpisodeCard: React.FC<EpisodeCardProps> = ({
             <div className="episode-thumbnail">
                 {tmdbLoading ? (
                     <div className="skeleton-item episode-thumbnail-skeleton" />
-                ) : (
+                ) : shownImage ? (
                     <img
-                        src={imageUrl}
+                        key={shownImage}
+                        src={shownImage}
                         alt={episodeTitle || t('episode_label_badge', { count: episodeNum })}
                         draggable={false}
-                        onError={(e) => {
-                            (e.target as HTMLImageElement).src = posterFallback;
-                        }}
+                        onError={() => setFailedImages((failed) => [...failed, shownImage])}
                     />
-                )}
+                ) : null}
 
                 {/* Title overlay on image */}
                 {!tmdbLoading && episodeTitle && (

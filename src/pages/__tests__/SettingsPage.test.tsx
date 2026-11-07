@@ -28,7 +28,7 @@ vi.mock('../SettingsPage.css', () => ({}));
 const mockUseSession = vi.fn().mockReturnValue({
     credentials: { host: 'http://test.com', username: 'user', password: 'pass' },
     accountInfo: { username: 'user', status: 'Active' },
-    settingsContentCounts: { live: 100, movies: 200, series: 50, uniqueMovies: 180, uniqueSeries: 45, tmdbMovies: 170, tmdbSeries: 40, tmdbMovieRate: 85, tmdbSeriesRate: 80 },
+    settingsContentCounts: { live: 100, movies: 200, series: 50, uniqueMovies: 180, uniqueSeries: 45, tmdbMovies: 170, tmdbSeries: 40, tmdbMovieRate: 85, tmdbSeriesRate: 80, tmdbMovieTitleRate: 0, tmdbSeriesTitleRate: 0 },
     iptvStatus: 'ok' as const,
     isLoading: false,
     progress: 0,
@@ -38,6 +38,12 @@ const mockUseSession = vi.fn().mockReturnValue({
 });
 vi.mock('../../contexts/SessionContext', () => ({
     useSession: () => mockUseSession(),
+}));
+
+// Mock SupabaseAuthContext : invité ou compte, choisi par test
+const mockAuth = vi.hoisted(() => ({ isGuest: false }));
+vi.mock('../../contexts/SupabaseAuthContext', () => ({
+    useSupabaseAuth: () => ({ isGuest: mockAuth.isGuest }),
 }));
 
 // Variable hoisted pour override mutable du hook useSettingsData par test
@@ -108,9 +114,21 @@ vi.mock('../../components/Navigation/SettingsSidebar', () => ({
         <div data-testid="settings-sidebar" data-active={activeSection}>
             Sidebar
             <button type="button" data-testid="select-general" onClick={() => onSelectSection('general')} />
+            <button type="button" data-testid="select-account" onClick={() => onSelectSection('account')} />
         </div>
     ),
     // Re-export the type (not needed at runtime but keeps TS happy via mock)
+}));
+
+vi.mock('../../components/Settings/AccountSection', () => ({
+    default: () => <div data-testid="account-section">AccountSection</div>,
+}));
+vi.mock('../../components/Settings/GuestAccountSection', () => ({
+    default: ({ onLeaveGuest }: { onLeaveGuest?: (intent: 'login' | 'register') => void }) => (
+        <div data-testid="guest-section">
+            <button type="button" data-testid="stub-leave-register" onClick={() => onLeaveGuest?.('register')} />
+        </div>
+    ),
 }));
 
 vi.mock('../../components/Settings/SourcesSection', () => ({
@@ -236,5 +254,25 @@ describe('SettingsPage', () => {
 
         render(<SettingsPage />);
         expect(screen.getByTestId('confirm-modal')).toBeInTheDocument();
+    });
+
+    it('compte connecté : la rubrique Compte est celle du compte', () => {
+        mockAuth.isGuest = false;
+        render(<SettingsPage />);
+        fireEvent.click(screen.getByTestId('select-account'));
+        expect(screen.getByTestId('account-section')).toBeInTheDocument();
+        expect(screen.queryByTestId('guest-section')).not.toBeInTheDocument();
+    });
+
+    it('invité : la rubrique Compte est celle de l\'espace invité, et « Créer un compte » prévient l\'app', () => {
+        mockAuth.isGuest = true;
+        const onLeaveGuest = vi.fn();
+        render(<SettingsPage onLeaveGuest={onLeaveGuest} />);
+        fireEvent.click(screen.getByTestId('select-account'));
+        expect(screen.getByTestId('guest-section')).toBeInTheDocument();
+        expect(screen.queryByTestId('account-section')).not.toBeInTheDocument();
+        fireEvent.click(screen.getByTestId('stub-leave-register'));
+        expect(onLeaveGuest).toHaveBeenCalledWith('register');
+        mockAuth.isGuest = false;
     });
 });

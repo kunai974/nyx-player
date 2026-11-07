@@ -143,14 +143,12 @@ describe('liveTvBookmarksService - favoris', () => {
     expect(pushLiveTvBookmarkUpsertToCloud).not.toHaveBeenCalled();
   });
 
-  // défaut connu, correction à venir : renvoyer l'état réel du cache et émettre un événement après le retour en arrière
-  it.fails('renvoie false quand l\'écriture SQL de l\'ajout échoue', async () => {
+  it('renvoie false quand l\'écriture SQL de l\'ajout échoue', async () => {
     mockDb.execute.mockRejectedValueOnce(new Error('SQL'));
     expect(await toggleFavorite(7)).toBe(false);
   });
 
-  // défaut connu, correction à venir : l'événement part aujourd'hui avant l'écriture, aucun ne suit le retour en arrière
-  it.fails('après un échec SQL, un 2e événement live-tv-bookmarks est émis pour que l\'affichage revienne en arrière', async () => {
+  it('après un échec SQL, un 2e événement live-tv-bookmarks est émis pour que l\'affichage revienne en arrière', async () => {
     mockDb.execute.mockRejectedValueOnce(new Error('SQL'));
     await toggleFavorite(7);
     expect(events).toHaveLength(2);
@@ -194,14 +192,12 @@ describe('liveTvBookmarksService - catégories épinglées', () => {
     expect(getPinnedCategories().has('cat2')).toBe(false);
   });
 
-  // défaut connu, correction à venir : renvoyer l'état réel du cache et émettre un événement après le retour en arrière
-  it.fails('renvoie false quand l\'écriture SQL de l\'épinglage échoue', async () => {
+  it('renvoie false quand l\'écriture SQL de l\'épinglage échoue', async () => {
     mockDb.execute.mockRejectedValueOnce(new Error('SQL'));
     expect(await togglePinnedCategory('cat2')).toBe(false);
   });
 
-  // défaut connu, correction à venir : aucun événement ne suit le retour en arrière
-  it.fails('après un échec SQL, un 2e événement est émis pour que l\'affichage revienne en arrière (épinglage)', async () => {
+  it('après un échec SQL, un 2e événement est émis pour que l\'affichage revienne en arrière (épinglage)', async () => {
     mockDb.execute.mockRejectedValueOnce(new Error('SQL'));
     await togglePinnedCategory('cat2');
     expect(events).toHaveLength(2);

@@ -218,6 +218,17 @@ describe('Login — saisie des identifiants du fournisseur', () => {
             expect(onLogin).toHaveBeenCalledTimes(1);
         });
 
+        it('liste M3U sans identifiants : la liste elle-même devient la source', () => {
+            renderLogin();
+            openLink();
+            type(link(), 'http://liste.invalid:9191/output/m3u?token=abc');
+            submit();
+            expect(onLogin).toHaveBeenCalledWith({
+                host: 'm3u:liste.invalid:9191', username: '', password: '',
+                m3u: { url: 'http://liste.invalid:9191/output/m3u?token=abc' },
+            });
+        });
+
         it('retour à l\'onglet Xtream Codes : les champs réapparaissent', () => {
             renderLogin();
             openLink();
@@ -338,5 +349,29 @@ describe('Login — adresse du serveur nettoyée', () => {
     it('adresse collée et identifiants saisis : ceux saisis l\'emportent', () => {
         const onLogin = loginWith('http://fournisseur.invalid/get.php?username=ancien&password=ancien', 'jean', 'secret-factice');
         expect(onLogin).toHaveBeenCalledWith({ host: 'http://fournisseur.invalid', username: 'jean', password: 'secret-factice' });
+    });
+});
+
+describe('Login — invité (sans compte)', () => {
+    const props = { onLogin: vi.fn(), isLoading: false, progress: 0 };
+
+    it('pas de « Se déconnecter du compte » : il n\'y a pas de compte', () => {
+        render(<Login {...props} guest onBackToProfiles={vi.fn()} />);
+        expect(screen.queryByTestId('provider-sign-out')).not.toBeInTheDocument();
+    });
+
+    it('« Retour » ramène à l\'accueil (pas aux profils) et appelle le retour', () => {
+        const back = vi.fn();
+        render(<Login {...props} guest onBackToProfiles={back} />);
+        const btn = screen.getByTestId('provider-back-to-profiles');
+        expect(btn).toHaveTextContent('btn_back_to_welcome');
+        fireEvent.click(btn);
+        expect(back).toHaveBeenCalledTimes(1);
+    });
+
+    it('avec un compte, rien ne change : « Retour aux profils » et « Se déconnecter du compte »', () => {
+        render(<Login {...props} onBackToProfiles={vi.fn()} />);
+        expect(screen.getByTestId('provider-back-to-profiles')).toHaveTextContent('btn_back_to_profiles');
+        expect(screen.getByTestId('provider-sign-out')).toBeInTheDocument();
     });
 });

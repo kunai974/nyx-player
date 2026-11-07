@@ -29,7 +29,7 @@ vi.mock('../../../services/epgService', () => ({
   requestSyncAbort: vi.fn(),
   cancelAbort: vi.fn(),
 }));
-vi.mock('../../../services/preferencesService', () => ({ isEpgWifiOnly: () => false, setEpgWifiOnly: vi.fn() }));
+vi.mock('../../../services/preferencesService', () => ({ isEpgWifiOnly: () => false, setEpgWifiOnly: vi.fn(), isTmdbTitleSearchEnabled: () => true, setTmdbTitleSearch: vi.fn() }));
 vi.mock('../../../services/catalogAutoRefresh', () => ({
   getAutoRefreshInfo: () => new Promise(() => {}),
   setAutoRefreshEnabled: vi.fn(),

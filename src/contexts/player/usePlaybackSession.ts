@@ -22,6 +22,7 @@ import {
 } from '../../services/player/playbackErrors';
 import type { PlayableItem, DirectPlayableItem, PlayOptions } from '../../types/player';
 import { buildStreamUrl, recordPlaybackStart, resolveStartPosition } from './streamRequest';
+import { resolveM3uPlayback } from '../../services/m3uCatalog';
 import { useDeferredPurge } from './useDeferredPurge';
 import type { LastPlayRequest, PlayerActions, PlayerState } from './types';
 import { createLogger } from '../../utils/logger';
@@ -103,18 +104,23 @@ export function usePlaybackSession(): PlaybackSession {
             setIsTransitioningToPlayer(false);
         };
 
-        // Récupérer les credentials
-        const creds = await StorageService.getCredentials();
+        // Entrée d'une liste M3U : son adresse est dans le catalogue, sans identifiants Xtream
+        const direct = await resolveM3uPlayback(item, { seriesEpisodes: series?.episodes, seriesId: options?.seriesId ?? series?.series_id });
         if (!isCurrent()) return;
-        if (!creds) {
-            log.error('No credentials');
-            failLaunch({ kind: 'missing_credentials' });
-            return;
-        }
+        let result: { url: string; container: string; live: boolean } | null = direct;
+        if (!result) {
+            // Récupérer les credentials
+            const creds = await StorageService.getCredentials();
+            if (!isCurrent()) return;
+            if (!creds) {
+                log.error('No credentials');
+                failLaunch({ kind: 'missing_credentials' });
+                return;
+            }
 
-        // Construire l'URL du stream
-        const api = new XtreamApiService(creds);
-        const result = buildStreamUrl(item, api);
+            // Construire l'URL du stream
+            result = buildStreamUrl(item, new XtreamApiService(creds));
+        }
 
         if (!result) {
             log.error('Could not build stream URL');
@@ -142,7 +148,7 @@ export function usePlaybackSession(): PlaybackSession {
             void enterPlayerMode(); // WebView2 → Low Memory permanent
             schedulePurge();
 
-            devLog('player', 'Lecture démarrée', { url: sanitizeIptvUrl(result.url), container: result.container });
+            devLog('player', 'Lecture démarrée', { url: direct ? 'liste M3U' : sanitizeIptvUrl(result.url), container: result.container });
         } catch (e) {
             log.error('mpvPlay failed:', e);
             // Sinon l'écran « réessayer » disparaît pendant une relance et laisse une image figée
@@ -194,19 +200,20 @@ export function usePlaybackSession(): PlaybackSession {
         cancelPendingPurge();
         setPlaybackError(null);
         if (!retryingRef.current) setRetryAttempt(0);
-        const creds = await StorageService.getCredentials();
+        // Chaîne d'une liste M3U : adresse prise dans le catalogue ; sinon identifiants Xtream
+        const direct = await resolveM3uPlayback(item);
+        const creds = direct ? null : await StorageService.getCredentials();
         if (!isCurrent()) return;
         // Zap pendant le fondu d'un arrêt ou d'une relance : ce zap prend la main, le voile noir doit partir
         setIsTransitioningToPlayer(false);
-        if (!creds) {
+        if (!direct && !creds) {
             log.error('switchChannel: No credentials');
             lastRetryAtRef.current = 0;
             setPlaybackError({ kind: 'missing_credentials' });
             return;
         }
 
-        const api = new XtreamApiService(creds);
-        const result = buildStreamUrl(item, api);
+        const result = direct ?? (creds ? buildStreamUrl(item, new XtreamApiService(creds)) : null);
         if (!result) {
             log.error('switchChannel: Could not build URL');
             lastRetryAtRef.current = 0;

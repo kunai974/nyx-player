@@ -251,3 +251,30 @@ describe('SourceForm — lien Xtream (M3U)', () => {
     expect(textarea().value).toBe('');
   });
 });
+
+describe('SourceForm — liste M3U', () => {
+  const listUrl = 'http://liste.invalid:9191/output/m3u?token=jeton-factice';
+  const listCreds: XtreamCredentials = { host: 'm3u:liste.invalid:9191', username: '', password: '', m3u: { url: listUrl } };
+
+  it('lecture seule : l\'hôte de la liste seul, jamais l\'adresse avec son jeton', () => {
+    render(<SourceForm credentials={listCreds} isEditing={false} onEditingChange={onEditingChange} />);
+    expect(screen.getByTestId('settings-provider-m3u-host')).toHaveTextContent('liste.invalid:9191');
+    expect(document.body.textContent).not.toContain('jeton-factice');
+    expect(screen.queryByText('••••••••')).toBeNull();
+  });
+
+  it('modification : onglet lien ouvert, adresse de la liste (avec son jeton) pas réaffichée', () => {
+    render(<SourceForm credentials={listCreds} isEditing onEditingChange={onEditingChange} onCredentialsChange={onCredentialsChange} />);
+    expect(screen.getByText('tab_m3u')).toHaveClass('active');
+    expect(textarea().value).toBe('');
+    expect(document.body.textContent).not.toContain('jeton-factice');
+  });
+
+  it('enregistrer une liste M3U depuis un abonnement Xtream : la liste devient la source', async () => {
+    renderForm();
+    fireEvent.click(screen.getByText('tab_m3u'));
+    type(textarea(), listUrl);
+    await act(async () => { fireEvent.click(screen.getByText('save')); });
+    expect(onCredentialsChange).toHaveBeenCalledWith(listCreds);
+  });
+});

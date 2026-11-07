@@ -14,6 +14,7 @@
 #   - bouton « Run workflow » (visible une fois ce fichier arrivé sur `main`).
 # Même commande qu'en local : `cargo test --locked` dans src-tauri.
 # Le code Kotlin du plugin Android n'est pas compilé ici : il faut la chaîne Android complète.
+# La partie Rust est aussi vérifiée (types seulement) pour la cible Android, avec le NDK de la machine.
 name: Rust
 
 on:
@@ -69,6 +70,8 @@ jobs:
           # Épinglée par empreinte, l'action ne lit plus la chaîne dans son nom : la donner ici
           toolchain: stable
           components: clippy
+          # Cible Android : vérification de compilation ci-dessous (pas de tests, pas d'APK)
+          targets: aarch64-linux-android
 
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
         with:
@@ -86,6 +89,17 @@ jobs:
       - name: Tests
         working-directory: src-tauri
         run: cargo test --locked
+
+      # Le code réservé au bureau (#[cfg(desktop)], dépendances absentes d'Android comme keyring)
+      # doit aussi compiler pour Android : `cargo test` sous Linux ne le voit pas. Vérification de
+      # types seulement, avec le compilateur C du NDK préinstallé (crates ring, sqlite).
+      - name: Compilation Android (vérification)
+        working-directory: src-tauri
+        run: |
+          ndk_bin="$ANDROID_NDK_LATEST_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin"
+          CC_aarch64_linux_android="$ndk_bin/aarch64-linux-android26-clang" \
+          AR_aarch64_linux_android="$ndk_bin/llvm-ar" \
+            cargo check --locked --target aarch64-linux-android
 
       # Conseils de qualité Rust. En simple avertissement pour l'instant : le code existant
       # n'a jamais été passé à clippy, ses remarques s'affichent sans bloquer l'envoi.

@@ -224,3 +224,133 @@ describe('SupabaseAuthContext — suppression de compte interrompue', () => {
         expect(isAccountDeletionPending()).toBe(false);
     });
 });
+
+describe('SupabaseAuthContext — utiliser Nyx sans compte (espace invité)', () => {
+    const UUID = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/;
+
+    it('« Continuer sans compte » : l\'espace invité s\'ouvre, rien n\'est noté pour la synchro, pas de battement de cœur', () => {
+        mount();
+        act(() => { emit('INITIAL_SESSION', null); });
+        expect(auth?.isGuest).toBe(false);
+
+        act(() => { auth?.enterGuestMode(); });
+
+        expect(auth?.isGuest).toBe(true);
+        expect(auth?.isDbReady).toBe(true);
+        expect(setDatabaseName).toHaveBeenCalledTimes(1);
+        expect(setDatabaseName.mock.calls[0][0]).toMatch(UUID);
+        expect(setKeyringUser).toHaveBeenCalledWith(setDatabaseName.mock.calls[0][0]);
+        // Jamais de synchro : l'identifiant noté pour la synchro reste vide
+        expect(setCurrentSyncUserId).toHaveBeenLastCalledWith(null);
+        expect(sendHeartbeat).not.toHaveBeenCalled();
+        expect(localStorage.getItem('nyx_guest_mode')).toBe('1');
+    });
+
+    it('au lancement suivant, l\'espace invité se rouvre tout seul, le même', () => {
+        mount();
+        act(() => { emit('INITIAL_SESSION', null); });
+        act(() => { auth?.enterGuestMode(); });
+        const first = setDatabaseName.mock.calls[0][0];
+
+        vi.clearAllMocks();
+        mount();
+        act(() => { emit('INITIAL_SESSION', null); });
+
+        expect(auth?.isGuest).toBe(true);
+        expect(setDatabaseName).toHaveBeenCalledWith(first);
+    });
+
+    it('sans choix « invité » mémorisé, un lancement sans compte n\'ouvre aucun espace', () => {
+        mount();
+        act(() => { emit('INITIAL_SESSION', null); });
+        expect(auth?.isGuest).toBe(false);
+        expect(auth?.isDbReady).toBe(false);
+        expect(setDatabaseName).not.toHaveBeenCalled();
+    });
+
+    it('quitter l\'espace invité : l\'espace se ferme, ses données et son identifiant restent sur l\'appareil', async () => {
+        mount();
+        act(() => { emit('INITIAL_SESSION', null); });
+        act(() => { auth?.enterGuestMode(); });
+        const id = localStorage.getItem('nyx_guest_space_id');
+        expect(id).toMatch(UUID);
+
+        await act(async () => { await auth?.leaveGuestMode(); });
+
+        expect(auth?.isGuest).toBe(false);
+        expect(auth?.isDbReady).toBe(false);
+        expect(localStorage.getItem('nyx_guest_mode')).toBeNull();
+        expect(localStorage.getItem('nyx_guest_space_id')).toBe(id);
+    });
+
+    it('un compte connecté l\'emporte : le choix « invité » est oublié et l\'espace du compte s\'ouvre', () => {
+        localStorage.setItem('nyx_guest_mode', '1');
+        mount();
+        act(() => { emit('INITIAL_SESSION', { user: { id: 'a' } }); });
+
+        expect(auth?.isGuest).toBe(false);
+        expect(localStorage.getItem('nyx_guest_mode')).toBeNull();
+        expect(setDatabaseName).toHaveBeenCalledTimes(1);
+        expect(setDatabaseName).toHaveBeenCalledWith('a');
+    });
+
+    it('se connecter pendant l\'espace invité ferme d\'abord l\'espace invité, puis ouvre celui du compte', () => {
+        mount();
+        act(() => { emit('INITIAL_SESSION', null); });
+        act(() => { auth?.enterGuestMode(); });
+        act(() => { emit('SIGNED_IN', { user: { id: 'a' } }); });
+
+        expect(auth?.isGuest).toBe(false);
+        expect(setDatabaseName.mock.calls.map((c) => c[0])[1]).toBe('a');
+        expect(setCurrentSyncUserId).toHaveBeenLastCalledWith('a');
+    });
+
+    it('« Continuer sans compte » est refusé quand un compte est connecté', () => {
+        mount();
+        act(() => { emit('INITIAL_SESSION', { user: { id: 'a' } }); });
+        act(() => { auth?.enterGuestMode(); });
+        expect(auth?.isGuest).toBe(false);
+        expect(setDatabaseName).toHaveBeenCalledTimes(1);
+    });
+
+    it('un SIGNED_OUT venu de Supabase ne ferme pas l\'espace invité et n\'annonce jamais « session expirée »', () => {
+        mount();
+        act(() => { emit('INITIAL_SESSION', null); });
+        act(() => { auth?.enterGuestMode(); });
+        act(() => { emit('SIGNED_OUT', null); });
+
+        expect(auth?.isGuest).toBe(true);
+        expect(auth?.isDbReady).toBe(true);
+        expect(auth?.sessionExpired).toBe(false);
+    });
+
+    it('le compte revient pendant l\'espace invité : caches vidés, espace invité fermé et spaceKey change (la session IPTV de l\'invité est refermée)', () => {
+        mount();
+        act(() => { emit('INITIAL_SESSION', null); });
+        act(() => { auth?.enterGuestMode(); });
+        const before = auth?.spaceKey;
+        act(() => { emit('TOKEN_REFRESHED', { user: { id: 'a' } }); });
+        expect(auth?.isGuest).toBe(false);
+        expect(auth?.spaceKey).not.toBe(before);
+        expect(setDatabaseName).toHaveBeenLastCalledWith('a');
+    });
+
+    it('un « session expirée » d\'avant ne reparaît pas après l\'espace invité', async () => {
+        mount();
+        act(() => { emit('INITIAL_SESSION', null); });
+        act(() => { auth?.enterGuestMode(); });
+        await act(async () => { await auth?.leaveGuestMode(); });
+        expect(auth?.sessionExpired).toBe(false);
+    });
+});
+
+describe('SupabaseAuthContext — fournisseur reçu par QR code', () => {
+    it('déconnexion venue du serveur (session expirée) : le fournisseur en attente est oublié, il ne passe pas au compte suivant', async () => {
+        const { setPendingTvLinkProvider, peekPendingTvLinkProvider } = await import('../../services/tvLink/pendingProvider');
+        mount();
+        act(() => { emit('SIGNED_IN', { user: { id: 'a' } }); });
+        setPendingTvLinkProvider({ type: 'xtream', host: 'http://serveur.example', username: 'u', password: 'p' });
+        act(() => { emit('SIGNED_OUT', null); });
+        expect(peekPendingTvLinkProvider()).toBeNull();
+    });
+});

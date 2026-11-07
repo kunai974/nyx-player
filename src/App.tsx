@@ -15,6 +15,9 @@ import AppRoutes from './components/AppRoutes';
 import { MovieDetailPage, SeriesDetailPage, preloadSecondaryPages } from './components/lazyPages';
 import { whenIdle } from './utils/lazyPage';
 import SupabaseAuthPage from './pages/SupabaseAuthPage';
+import TvLinkAccountPage from './pages/TvLinkAccountPage';
+import { clearPendingTvLinkProvider } from './services/tvLink/pendingProvider';
+import WelcomePage from './pages/WelcomePage';
 import { useDevOverrides } from './contexts/DevOverrideContext';
 import type { IptvStream } from './types/iptv';
 import type { XtreamMovie } from './types/xtream';
@@ -34,7 +37,7 @@ import { useNavigation } from './contexts/NavigationContext';
 import { usePlayer } from './contexts/PlayerContext';
 import { useSupabaseAuth } from './contexts/SupabaseAuthContext';
 import { useLiveTvCategories } from './hooks/useLiveTvCategories';
-import { liveTvLists, visibleLiveCategories } from './services/liveTvLists';
+import { liveCategoryOf, liveTvLists, visibleLiveCategories } from './services/liveTvLists';
 import { useHiddenCategoriesVersion } from './hooks/useHiddenCategoriesVersion';
 import { getFavorites } from './services/liveTvBookmarksService';
 import { useEpisodeNavigation } from './hooks/useEpisodeNavigation';
@@ -47,7 +50,7 @@ import ConfirmModal from './components/Common/ConfirmModal';
 import PlaybackLaunchError from './components/Player/PlaybackLaunchError';
 import { useAndroidBackButton, useBackHandler } from './hooks/useBackHandler';
 import { isTv } from './utils/platform';
-import { useAuditScreen } from './dev/auditBridge';
+import { useEcranAudit } from './services/outilsTest';
 import { warnOnReject } from './utils/warnOnReject';
 
 // Panneau de développement : chargé seulement en développement, absent du bundle publié
@@ -60,11 +63,18 @@ const App: React.FC = () => {
   // TV passe pour un téléphone, et un écran 16:10 (864 px avant la toile 1280) pour un écran compact.
   const TvCategoriesNav = isCompactLayout() ? LiveTvMobileBar : TvCategoriesSidebar;
   const { t } = useTranslation(['common', 'auth', 'navigation']);
-  const { session, loading: supabaseLoading, signOut } = useSupabaseAuth();
+  const { session, loading: supabaseLoading, signOut, isGuest, enterGuestMode, leaveGuestMode, sessionExpired } = useSupabaseAuth();
+  // Écran de connexion demandé (« Se connecter » de l'accueil TV, ou depuis les réglages d'un invité)
+  const [authRequested, setAuthRequested] = useState<'login' | 'register' | 'phone' | null>(null);
+  // Connecté : la demande est remplie. Une déconnexion ramène alors à l'accueil, pas à la connexion
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- la demande d'écran de connexion tombe quand un compte se connecte
+    if (session) setAuthRequested(null);
+  }, [session]);
   const { setActivePage, overrides } = useDevOverrides();
   const xtreamDev = overrides.xtreamPage;
   // Version d'audit seulement : l'outil peut afficher la connexion ou l'ajout du fournisseur, session ouverte
-  const auditScreen = useAuditScreen();
+  const auditScreen = useEcranAudit();
 
   // =========================================================================
   // SESSION STATE (from SessionContext)
@@ -112,6 +122,8 @@ const App: React.FC = () => {
     hasSavedSession,
     selectSessionProfile: sessionSelectProfile,
     resumeSession,
+    guest: isGuest,
+    isCheckingSavedSession,
   });
 
   // =========================================================================
@@ -147,17 +159,22 @@ const App: React.FC = () => {
   useEffect(() => {
     const isStable =
       !supabaseLoading && (
-        !session ||            // → SupabaseAuthPage is ready
+        (!session && !isGuest) ||            // → SupabaseAuthPage (ou l'accueil TV) is ready
         profilesInitialized    // → ProfileSelector (or beyond) is ready
       );
     if (isStable) {
       perfMark('first-screen');
       window.__hideAppLoader?.();
     }
-  }, [supabaseLoading, session, profilesInitialized]);
+  }, [supabaseLoading, session, isGuest, profilesInitialized]);
 
   // Pages secondaires préchargées en tâche de fond une fois le catalogue affiché : elles
   // s'ouvrent ensuite sans attente
+  // Fournisseur reçu par QR code avec le compte : réservé au premier écran du fournisseur. Si le
+  // profil choisi avait déjà sa source, il est oublié, et ne connecte pas un autre profil ensuite
+  useEffect(() => {
+    if (isLoggedIn) clearPendingTvLinkProvider();
+  }, [isLoggedIn]);
   const mainUiReady = isLoggedIn && !!lightIndexes;
   useEffect(() => {
     if (!mainUiReady) return;
@@ -173,13 +190,32 @@ const App: React.FC = () => {
   const cancelLogout = useCallback(() => {
     setLogoutConfirmOpen(false);
   }, []);
+  // Quitter l'espace invité : les données restent sur l'appareil, l'accueil (ou la connexion) revient
+  const leaveGuest = useCallback(async (intent: 'login' | 'register' | null = null) => {
+    setLogoutConfirmOpen(false);
+    setViewMode('grid');
+    await sessionLogout();
+    await leaveGuestMode();
+    resetProfiles();
+    setAuthRequested(intent);
+  }, [sessionLogout, leaveGuestMode, resetProfiles]);
+  // Entrer en invité : toute session IPTV d'un compte expiré est fermée d'abord (sa source ne passe pas à l'invité)
+  const enterGuest = useCallback(async () => {
+    await sessionLogout();
+    resetProfiles();
+    enterGuestMode();
+  }, [sessionLogout, resetProfiles, enterGuestMode]);
   const confirmLogout = useCallback(async () => {
+    if (isGuest) {
+      await leaveGuest(null);
+      return;
+    }
     setLogoutConfirmOpen(false);
     setViewMode('grid');
     await signOut();
     await sessionLogout();
     resetProfiles();
-  }, [sessionLogout, signOut, resetProfiles]);
+  }, [isGuest, leaveGuest, sessionLogout, signOut, resetProfiles]);
 
   // Bandeau « source changée » : suit l'état de la session, effacé à la déconnexion et à la reprise
   // suivante (avant : un état local passé à vrai n'était jamais remis à faux)
@@ -273,7 +309,7 @@ const App: React.FC = () => {
 
     if ('stream_type' in currentlyPlaying && currentlyPlaying.stream_type === 'live') {
       isLive = true;
-      computedCategoryId = String((currentlyPlaying as IptvStream).category_id);
+      computedCategoryId = liveCategoryOf(lightIndexes, String((currentlyPlaying as IptvStream).category_id));
     } else if (
       'stream_id' in currentlyPlaying &&
       lightIndexes.live.has(Number(currentlyPlaying.stream_id)) &&
@@ -281,7 +317,7 @@ const App: React.FC = () => {
       !('series_id' in currentlyPlaying)
     ) {
       isLive = true;
-      computedCategoryId = lightIndexes.live.get(Number(currentlyPlaying.stream_id))!.categoryId;
+      computedCategoryId = liveCategoryOf(lightIndexes, lightIndexes.live.get(Number(currentlyPlaying.stream_id))!.categoryId);
     }
 
     if (!isLive) return undefined;
@@ -322,7 +358,7 @@ const App: React.FC = () => {
   useEffect(() => {
     if (supabaseLoading) {
       setActivePage('LoadingScreen');
-    } else if (!session) {
+    } else if (!session && !isGuest) {
       setActivePage('SupabaseAuthPage');
     } else if (profilesLoading) {
       setActivePage('ProfileLoading');
@@ -333,13 +369,23 @@ const App: React.FC = () => {
     } else {
       setActivePage('MainApp');
     }
-  }, [supabaseLoading, session, profilesLoading, profileSelected, isLoggedIn, setActivePage]);
+  }, [supabaseLoading, session, isGuest, profilesLoading, profileSelected, isLoggedIn, setActivePage]);
 
   // =========================================================================
   // ANDROID BACK BUTTON — bas de la pile (player, menus et modals passent avant)
   // =========================================================================
   useAndroidBackButton();
   useBackHandler(true, () => {
+    // TV, écran de connexion ouvert depuis l'accueil à deux tuiles : Retour revient à l'accueil
+    if (!session && !isGuest && isTv() && authRequested) {
+      setAuthRequested(null);
+      return;
+    }
+    // Invité, ajout du fournisseur : Retour fait comme le bouton « Retour à l'accueil »
+    if (!isLoggedIn && isGuest) {
+      void leaveGuest(null);
+      return;
+    }
     if (!isLoggedIn) {
       if (session && profileSelected) {
         setProfileSelected(false);
@@ -375,9 +421,9 @@ const App: React.FC = () => {
     <ConfirmModal
       testId="logout-modal"
       isOpen={logoutConfirmOpen}
-      title={t('navigation:logout')}
-      message={t('common:logout_confirm')}
-      confirmText={t('navigation:logout')}
+      title={isGuest ? t('common:guest_leave_title') : t('navigation:logout')}
+      message={isGuest ? t('common:guest_leave_confirm') : t('common:logout_confirm')}
+      confirmText={isGuest ? t('common:guest_leave_action') : t('navigation:logout')}
       cancelText={t('common:cancel')}
       danger={false}
       onConfirm={() => void confirmLogout()}
@@ -413,7 +459,8 @@ const App: React.FC = () => {
           onLogin={(creds) => void sessionLogin(creds)}
           isLoading={isLoading}
           progress={progress}
-          onBackToProfiles={() => setProfileSelected(false)}
+          onBackToProfiles={isGuest ? () => void leaveGuest(null) : () => setProfileSelected(false)}
+          guest={isGuest}
         />
 
         {/* Provider Change Confirmation Dialog — must be here for login flow */}
@@ -457,10 +504,37 @@ const App: React.FC = () => {
     return renderProviderLogin();
   }
 
-  if (!session || auditScreen === 'account') {
+  // TV sans compte : l'accueil à deux tuiles précède la connexion (sauf session expirée : le message
+  // est sur l'écran de connexion)
+  if (!session && !isGuest && isTv() && !authRequested && !sessionExpired && auditScreen !== 'account') {
     return (
       <>
-        <SupabaseAuthPage />
+        <WelcomePage
+          onSignIn={() => setAuthRequested('login')}
+          onSignInWithPhone={() => setAuthRequested('phone')}
+          onContinueAsGuest={() => void enterGuest()}
+        />
+        <UpdateNotification updater={updaterForBanner} />
+        <DevPanel />
+      </>
+    );
+  }
+
+  // TV, « Avec mon téléphone » : QR code, le compte (et peut-être le fournisseur) saisi sur le téléphone
+  if (!session && !isGuest && isTv() && authRequested === 'phone' && auditScreen !== 'account') {
+    return (
+      <>
+        <TvLinkAccountPage onCancel={() => setAuthRequested(null)} />
+        <UpdateNotification updater={updaterForBanner} />
+        <DevPanel />
+      </>
+    );
+  }
+
+  if ((!session && !isGuest) || auditScreen === 'account') {
+    return (
+      <>
+        <SupabaseAuthPage onContinueAsGuest={() => void enterGuest()} initialMode={authRequested === 'register' ? 'register' : 'login'} />
         <UpdateNotification updater={updaterForBanner} />
         <DevPanel />
       </>
@@ -709,6 +783,7 @@ const App: React.FC = () => {
             profileId={activeProfileId ?? undefined}
             onProfileRenamed={() => void handleProfileRenamed()}
             onLogout={handleLogout}
+            onLeaveGuest={(intent) => void leaveGuest(intent)}
             homeCovered={!!(currentlyPlaying || isTransitioningToPlayer || selectedMovie || selectedSeries)}
           />
           </Suspense>

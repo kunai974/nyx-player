@@ -245,6 +245,7 @@
   }
 
   /* Pas d'état survol au doigt : il resterait accroché après un tap */
+  /* stylelint-disable-next-line defensive-css/no-accidental-hover -- annule volontairement le survol de bureau au doigt (il resterait accroché après un toucher), sans condition de survol */
   .nyx-mobile .sidebar:hover {
     background: rgba(15, 15, 20, 0.35);
     border-color: rgba(255, 255, 255, 0.08);
@@ -262,14 +263,18 @@
   }
 
   .nyx-mobile .nav-item {
+    /* stylelint-disable-next-line defensive-css/no-fixed-sizes -- cible tactile de 48 px (au moins 44 points) */
     width: 48px;
+    /* stylelint-disable-next-line defensive-css/no-fixed-sizes -- cible tactile de 48 px (au moins 44 points) */
     height: 48px;
     min-width: 48px;
     min-height: 48px;
   }
 
   .nyx-mobile .nav-icon {
+    /* stylelint-disable-next-line defensive-css/no-fixed-sizes -- icône de 22 px de la barre de navigation du téléphone */
     width: 22px;
+    /* stylelint-disable-next-line defensive-css/no-fixed-sizes -- icône de 22 px de la barre de navigation du téléphone */
     height: 22px;
   }
 
@@ -596,6 +601,24 @@
     content: none;
   }
 
+  /* Réglages › Compte sans compte : textes longs et deux boutons côte à côte débordaient de la
+     carte (« Se connecter » coupé, texte d'« Effacer les données » sur une colonne d'un mot).
+     Sur téléphone, tout s'empile : texte puis boutons pleine largeur. */
+  .nyx-mobile .settings-section--guest .setting-item {
+    flex-direction: column;
+    align-items: stretch;
+    gap: var(--space-3);
+  }
+
+  .nyx-mobile .settings-section--guest .settings-form-actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .nyx-mobile .settings-section--guest .setting-item .nyx-btn {
+    width: 100%;
+  }
+
   .nyx-mobile .settings-main {
     padding: 0 var(--space-4) var(--space-8);
   }
@@ -833,6 +856,11 @@
     opacity: 0.75;
   }
 
+  /* Remise à zéro d'un épisode : visible en permanence au doigt (au survol seulement, elle restait cachée) */
+  .nyx-mobile .series-detail-page .episode-reset-btn {
+    opacity: 1;
+  }
+
   .nyx-mobile .tv-category-item.active .tv-category-item__pin-btn,
   .nyx-mobile .tv-category-item__pin-btn.pinned {
     opacity: 0.8;
@@ -935,6 +963,7 @@
     right: auto;
     bottom: var(--space-2);
     left: var(--space-2);
+    /* stylelint-disable-next-line defensive-css/no-fixed-sizes -- barre latérale du téléphone en paysage bas : 64 px à côté du contenu */
     width: 64px;
     max-width: none;
     height: auto;

@@ -135,6 +135,7 @@
 
 .epg-banner__separator {
   width: 100%;
+  /* stylelint-disable-next-line defensive-css/no-fixed-sizes -- filet de 1 px : trait fin voulu */
   height: 1px;
   background: rgba(255, 255, 255, 0.08);
   margin: 0.15rem 0;

@@ -16,6 +16,9 @@ import { warnOnReject } from '../../utils/warnOnReject';
 import { legalNoticesUrl, privacyPolicyUrl, termsUrl } from '../../utils/legalLinks';
 import { clickableProps } from '../../utils/clickable';
 
+/** Longueur maximale d'un signalement : 500 coupait les listes de demandes au milieu d'une phrase. */
+const REPORT_MAX_LENGTH = 2000;
+
 const LEGAL_BASE_URL = 'https://nyxplayer.app';
 
 // ============================================================================
@@ -214,15 +217,14 @@ const AboutSection: React.FC = () => {
                                 className="about-report-bug__textarea"
                                 data-testid="settings-report-bug-text"
                                 value={bugDescription}
-                                onChange={(e) => setBugDescription(e.target.value.slice(0, 500))}
+                                onChange={(e) => setBugDescription(e.target.value.slice(0, REPORT_MAX_LENGTH))}
                                 placeholder={t('report_bug_placeholder')}
                                 rows={4}
-                                maxLength={500}
+                                maxLength={REPORT_MAX_LENGTH}
                                 autoFocus
                             />
                             <span className="about-report-bug__counter">
-                                {/* eslint-disable-next-line i18next/no-literal-string -- compteur de caractères (nombre / maximum), sans mot à traduire */}
-                                {bugDescription.length}/500
+                                {bugDescription.length}/{REPORT_MAX_LENGTH}
                             </span>
                             <div className="about-report-bug__actions">
                                 <NyxButton

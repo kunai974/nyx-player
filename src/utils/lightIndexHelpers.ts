@@ -153,3 +153,30 @@ export function getThisWeekSeries(
     .sort((a, b) => b.added - a.added) // Most recent first
     .slice(0, limit);
 }
+
+/**
+ * Nombre de titres différents à montrer à la place du total : les fiches TMDB différentes (plusieurs versions
+ * d'un film, FR, VOSTFR, 4K, n'en font qu'une), plus les titres sans fiche, comptés chacun. Seulement si la
+ * plupart des titres ont un numéro TMDB ; sinon (fournisseur sans numéro, titres reliés au compte-gouttes par
+ * leur nom) : 0, et l'affichage prend le total.
+ */
+export function uniqueTitleCount(uniqueTmdb: number, withTmdb: number, total: number): number {
+    return total > 0 && withTmdb * 2 >= total ? uniqueTmdb + Math.max(0, total - withTmdb) : 0;
+}
+
+/**
+ * Entrées qui avaient un lien trouvé par le titre mais dont le nom a changé depuis (le fournisseur a
+ * réutilisé le numéro pour un autre titre, ou renommé le sien) : le lien n'est pas reposé, et rien ne dit
+ * que l'entrée est encore le titre d'une reprise ou d'une ligne de Ma liste notée avec ce numéro TMDB.
+ */
+const staleLinkEntries = new WeakSet<object>();
+
+/** Marque une entrée dont le lien par le titre ne peut plus être reposé (nom changé) */
+export function markStaleTitleLink(entry: object): void {
+    staleLinkEntries.add(entry);
+}
+
+/** L'entrée avait un lien par le titre que son nom actuel ne permet plus de reposer */
+export function isStaleTitleLink(entry: object | undefined): boolean {
+    return !!entry && staleLinkEntries.has(entry);
+}

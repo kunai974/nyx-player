@@ -86,7 +86,7 @@ describe('purgeProviderCloudData', () => {
     const { setMeta } = await import('../dbCore');
     await purgeProviderCloudData('compte-a');
 
-    expect(clearBaselines).toHaveBeenCalledWith('compte-a', ['playback', 'livetv', 'hidden']);
+    expect(clearBaselines).toHaveBeenCalledWith('compte-a', ['playback', 'playback_v2', 'livetv', 'livetv_v2', 'hidden', 'hidden_v2']);
     const doneAt = vi.mocked(setMeta).mock.invocationCallOrder[vi.mocked(setMeta).mock.calls.findIndex((c) => c[1] === '0')];
     expect(clearBaselines.mock.invocationCallOrder[0]).toBeLessThan(doneAt);
   });

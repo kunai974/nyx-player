@@ -79,7 +79,15 @@
   "no_synopsis": "Aucun résumé disponible.",
   "password_show": "Afficher le mot de passe",
   "password_hide": "Masquer le mot de passe",
+  "progress_reset_failed": "La progression n'a pas pu être réinitialisée. Réessayez.",
   "watchlist_update_failed": "Ma liste n'a pas pu être modifiée. Réessayez.",
+  "tvlink_connected_account": "Connecté avec votre téléphone · compte {{email}}",
+  "tvlink_connected_account_provider": "Connecté avec votre téléphone · compte {{email}} · fournisseur {{host}}",
+  "tvlink_connected_provider": "Fournisseur ajouté avec votre téléphone · {{host}}",
   "link_fallback_title": "Ce lien ne peut pas s'ouvrir ici",
-  "link_fallback_message": "Ouvrez cette adresse sur un téléphone ou un ordinateur : {{url}}"
+  "link_fallback_message": "Ouvrez cette adresse sur un téléphone ou un ordinateur : {{url}}",
+  "guest_leave_title": "Quitter l'utilisation sans compte",
+  "guest_leave_confirm": "Revenir à l'écran d'accueil ? Vos données restent sur cet appareil : vous les retrouverez en choisissant « Continuer sans compte ».",
+  "guest_leave_action": "Quitter",
+  "unnamed_category": "Sans catégorie"
 }

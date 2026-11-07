@@ -44,3 +44,23 @@ export function sanitizeIptvUrl(url: string): string {
     .replace(/(%3F|%26|^|[^A-Za-z0-9_%])((?:username|password|token|key|apikey|auth|pass|pwd|signature)%3D)(?:[^&\s"'#%]|%(?:[013-9A-F][0-9A-F]|2[0-57-9A-F]))*/gi, '$1$2***')
     .replace(/("(?:username|password)"\s*:\s*")(?:[^"\\]|\\.)*"/gi, '$1***"');
 }
+
+/**
+ * Adresse de flux réduite pour les journaux : protocole, hôte, type Xtream (`live`, `movie`…) et
+ * dernier élément s'il n'est qu'un numéro ou une extension. Le reste du chemin et les paramètres
+ * sont retirés : une adresse de liste M3U peut cacher un secret n'importe où, sous une forme que
+ * `sanitizeIptvUrl` ne connaît pas.
+ */
+export function describeStreamForLog(url: string): string {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return '(adresse illisible)';
+  }
+  const segments = parsed.pathname.split('/').filter(Boolean);
+  const kind = /^(live|movie|series|timeshift|hls|play)$/i.test(segments[0] ?? '') ? `${segments[0]}/` : '';
+  const last = segments[segments.length - 1] ?? '';
+  const tail = /^\d+(\.[A-Za-z0-9]{1,8})?$/.test(last) ? last : (/\.[A-Za-z0-9]{1,8}$/.exec(last)?.[0] ?? '');
+  return `${parsed.protocol}//${parsed.host}/${kind}…/${tail}`;
+}

@@ -2,11 +2,63 @@ import { useState, useEffect, useDeferredValue, useMemo } from 'react';
 import type { LightMovie, LightSeries, LightLive, LightIndexes } from '../types/lightIndex';
 import { searchContent, normalizeName, matchesSearch } from '../services/searchIndex';
 import { groupByTmdbId, type GroupedItem } from '../utils/movieGrouping';
+import { providerTmdbCount, sameTitleVersionKey } from '../services/titleTmdbLinkStore';
+import { isHidden } from '../services/hiddenCategoriesService';
+import { useHiddenCategoriesVersion } from './useHiddenCategoriesVersion';
+import { hasValidTmdbId } from '../utils/normalizeTmdb';
 import { devLog } from '../utils/devLog';
 import { warnOnReject } from '../utils/warnOnReject';
 
-/** Résultats bruts demandés à FTS5 par recherche (avant groupage). */
+/** Résultats bruts demandés à FTS5 par type (avant groupage). */
 const RAW_LIMIT = 500;
+
+/**
+ * Les versions d'un même titre sans numéro TMDB (« FR | Dune (2021) », « Dune (2021) 4K ») ne font qu'une carte,
+ * comme celles qui ont un numéro : seulement quand le nom donne la même année des deux côtés.
+ * Les groupes avec numéro et ceux sans année restent tels quels.
+ */
+function mergeUnnumberedVersions<T extends LightMovie | LightSeries>(groups: GroupedItem<T>[]): GroupedItem<T>[] {
+  const byKey = new Map<string, GroupedItem<T>>();
+  const merged: GroupedItem<T>[] = [];
+  for (const group of groups) {
+    const key = hasValidTmdbId(group.representative.tmdbId) ? null : sameTitleVersionKey(group.representative.name);
+    const first = key ? byKey.get(key) : undefined;
+    if (!first) {
+      const own = { ...group, items: [...group.items] };
+      if (key) byKey.set(key, own);
+      merged.push(own);
+      continue;
+    }
+    first.items.push(...group.items);
+    first.sourceCount = first.items.length;
+  }
+  return merged;
+}
+
+/**
+ * Groupes d'un type, limités à `limit`. Aucun titre n'est écarté parce qu'il n'a pas de numéro TMDB : sans
+ * fiche, il n'était trouvable nulle part chez un fournisseur qui en donne pour ses autres titres.
+ * - Catalogue avec des numéros TMDB : les titres avec fiche d'abord (rang de la recherche), puis ceux sans
+ *   fiche, qui gardent au moins un tiers des places (des séparateurs aux noms très courts, comme
+ *   « ### FR ### », passeraient sinon devant les vrais titres).
+ * - Un titre sans fiche d'une catégorie masquée par l'utilisateur (adultes, par exemple) reste écarté.
+ */
+function searchGroups<T extends LightMovie | LightSeries>(
+  items: T[],
+  catalogHasTmdb: boolean,
+  type: 'movie' | 'series',
+  limit: number,
+): GroupedItem<T>[] {
+  // Catégories masquées écartées AVANT la fusion : une version masquée ne cache ni ne rejoint une carte visible
+  const visible = groupByTmdbId(items, true).filter((group) =>
+    hasValidTmdbId(group.representative.tmdbId) || !isHidden(group.representative.categoryId, type));
+  const groups = mergeUnnumberedVersions(visible);
+  if (!catalogHasTmdb) return groups.slice(0, limit);
+  const linked = groups.filter((group) => hasValidTmdbId(group.representative.tmdbId));
+  const orphans = groups.filter((group) => !hasValidTmdbId(group.representative.tmdbId));
+  const orphanSlots = Math.min(orphans.length, Math.max(limit - linked.length, Math.ceil(limit / 3)));
+  return linked.slice(0, limit - orphanSlots).concat(orphans.slice(0, orphanSlots));
+}
 
 interface GroupedSearchResults {
   movies: GroupedItem<LightMovie>[];
@@ -14,6 +66,8 @@ interface GroupedSearchResults {
   live: LightLive[]; // Live channels are not grouped
   total: number;
   rawTotal: number; // Total before grouping
+  /** Un type au moins a atteint RAW_LIMIT : la recherche a pu en laisser de côté */
+  rawTruncated: boolean;
 }
 
 /**
@@ -46,12 +100,14 @@ export const useGlobalSearch = (
   limit = 30
 ) => {
   const [debouncedQuery, setDebouncedQuery] = useState(query);
+  const hiddenVersion = useHiddenCategoriesVersion();
   const [searchResults, setSearchResults] = useState<GroupedSearchResults>({
     movies: [],
     series: [],
     live: [],
     total: 0,
     rawTotal: 0,
+    rawTruncated: false,
   });
   // Requête dont `searchResults` est le résultat (pour le filtrage immédiat)
   const [resultsQuery, setResultsQuery] = useState('');
@@ -74,7 +130,7 @@ export const useGlobalSearch = (
   useEffect(() => {
     if (!lightIndexes || !deferredQuery || deferredQuery.length < 2) {
       // eslint-disable-next-line react-hooks/set-state-in-effect -- requête trop courte : résultats de la recherche SQLite précédente effacés
-      setSearchResults({ movies: [], series: [], live: [], total: 0, rawTotal: 0 });
+      setSearchResults({ movies: [], series: [], live: [], total: 0, rawTotal: 0, rawTruncated: false });
       setResultsQuery('');
       return;
     }
@@ -85,7 +141,7 @@ export const useGlobalSearch = (
       const t0 = performance.now();
       
       // Step 1: FTS5 Search (async, ~5-20ms)
-      // Get many results because they're mixed across types and will be grouped
+      // Up to RAW_LIMIT results per type, grouped below
       const tSearch0 = performance.now();
       const ftsResults = await searchContent(deferredQuery, RAW_LIMIT);
       devLog('perf', `FTS5.search: ${(performance.now() - tSearch0).toFixed(1)}ms`);
@@ -113,16 +169,12 @@ export const useGlobalSearch = (
       }
       devLog('perf', `FTS5.lookup: ${(performance.now() - tLookup0).toFixed(1)}ms`);
 
-      // Step 3: Group by TMDB ID
+      // Step 3: Group by TMDB ID, max `limit` groups per type (for UI performance). Les numéros trouvés par
+      // le titre ne comptent pas pour dire si le fournisseur donne des numéros TMDB (comme l'accueil).
       const tGroup0 = performance.now();
-      // Titres sans numéro TMDB gardés seulement si aucun titre de ce type n'en a (même règle que l'accueil).
-      const groupedMovies = groupByTmdbId(movies, lightIndexes.moviesByTmdb.size === 0);
-      const groupedSeries = groupByTmdbId(series, lightIndexes.seriesByTmdb.size === 0);
+      const limitedMovies = searchGroups(movies, providerTmdbCount(lightIndexes.moviesByTmdb) > 0, 'movie', limit);
+      const limitedSeries = searchGroups(series, providerTmdbCount(lightIndexes.seriesByTmdb) > 0, 'series', limit);
       devLog('perf', `groupByTmdbId: ${(performance.now() - tGroup0).toFixed(1)}ms`);
-
-      // Step 4: Limit to max `limit` groups per type (for UI performance)
-      const limitedMovies = groupedMovies.slice(0, limit);
-      const limitedSeries = groupedSeries.slice(0, limit);
       const limitedLive = live.slice(0, limit);
 
       devLog('perf', `FTS5Search.total: ${(performance.now() - t0).toFixed(1)}ms`);
@@ -134,6 +186,7 @@ export const useGlobalSearch = (
           live: limitedLive,
           total: limitedMovies.length + limitedSeries.length + limitedLive.length,
           rawTotal: ftsResults.length,
+          rawTruncated: (['movie', 'series', 'live'] as const).some((type) => ftsResults.filter((r) => r.type === type).length >= RAW_LIMIT),
         });
         setResultsQuery(deferredQuery);
       }
@@ -144,7 +197,8 @@ export const useGlobalSearch = (
     return () => {
       cancelled = true;
     };
-  }, [lightIndexes, deferredQuery, limit]);
+    // hiddenVersion n'est pas lu : il change quand une catégorie est masquée ou rendue (isHidden) et relance la recherche
+  }, [lightIndexes, deferredQuery, limit, hiddenVersion]);
 
   // Filtrage immédiat : la requête tapée prolonge celle des résultats affichés (« the » → « the m ») ;
   // ses résultats en sont forcément une partie. Si les résultats affichés étaient tronqués (limites)
@@ -159,12 +213,12 @@ export const useGlobalSearch = (
     const series = searchResults.series.filter(keepGroup);
     const live = searchResults.live.filter((item) => matchesSearch(item.name, typed));
     const total = movies.length + series.length + live.length;
-    const truncated = searchResults.rawTotal >= RAW_LIMIT
+    const truncated = searchResults.rawTruncated
       || searchResults.movies.length >= limit
       || searchResults.series.length >= limit
       || searchResults.live.length >= limit;
     if (total === 0 && truncated) return null;
-    return { movies, series, live, total, rawTotal: searchResults.rawTotal };
+    return { movies, series, live, total, rawTotal: searchResults.rawTotal, rawTruncated: searchResults.rawTruncated };
   }, [typed, resultsQuery, searchResults, limit]);
 
   return {

@@ -16,8 +16,8 @@
 
 /* KB-002: Désactivation stricte du scroll pendant le mode Skeleton (le layout dummy dépasse souvent le viewport) */
 .movie-detail-page.state-loading {
-  overflow-y: hidden !important;
-  scrollbar-color: transparent transparent !important;
+  overflow-y: hidden;
+  scrollbar-color: transparent transparent;
 }
 
 @keyframes pageEntranceFade {
@@ -37,15 +37,6 @@
   opacity: 1;
   transform: scale(1);
 }
-
-/* Page hiding before unmount - simple fade out (cohérent sidebar) */
-.movie-detail-page.is-exiting {
-  opacity: 0 !important;
-  transition: opacity 150ms var(--ease-out) !important;
-  animation: none !important;
-  pointer-events: none;
-}
-
 
 
 /* Backdrop as full background — sticky so it stays visible during scroll */
@@ -113,7 +104,7 @@
   cursor: pointer;
   transition: all 0.3s var(--ease-out);
   z-index: 90;
-  outline: none !important;
+  outline: none;
   -webkit-tap-highlight-color: transparent;
 }
 
@@ -130,13 +121,15 @@
   transition: opacity 0.4s var(--ease-out) 0.1s;
 }
 
-.movie-detail-page .back-button:hover {
-  background: var(--active-overlay);
-  backdrop-filter: blur(0.625rem);
-  -webkit-backdrop-filter: blur(0.625rem);
-  border-color: var(--border-strong);
-  color: var(--text-primary);
-  transform: scale(1.1);
+@media (hover: hover) {
+  .movie-detail-page .back-button:hover {
+    background: var(--active-overlay);
+    backdrop-filter: blur(0.625rem);
+    -webkit-backdrop-filter: blur(0.625rem);
+    border-color: var(--border-strong);
+    color: var(--text-primary);
+    transform: scale(1.1);
+  }
 }
 
 .movie-detail-page .back-button svg {
@@ -146,8 +139,10 @@
   transition: transform 0.3s ease;
 }
 
-.movie-detail-page .back-button:hover svg {
-  transform: translateX(-2px);
+@media (hover: hover) {
+  .movie-detail-page .back-button:hover svg {
+    transform: translateX(-2px);
+  }
 }
 
 /* Layout - Content section */
@@ -304,9 +299,11 @@
   transition: all 0.2s ease;
 }
 
-.movie-detail-page .badge:hover {
-  background: rgba(255, 255, 255, 0.15);
-  border-color: rgba(255, 255, 255, 0.3);
+@media (hover: hover) {
+  .movie-detail-page .badge:hover {
+    background: rgba(255, 255, 255, 0.15);
+    border-color: rgba(255, 255, 255, 0.3);
+  }
 }
 
 /* Badge SVG icon (film branding picto) */
@@ -384,10 +381,12 @@
   box-shadow: 0 0.25rem 0.75rem rgba(255, 255, 255, 0.08);
 }
 
-.movie-detail-page .btn-primary:hover {
-  transform: translateY(-2px) scale(1.02);
-  box-shadow: 0 0.5rem 1.25rem rgba(255, 255, 255, 0.12);
-  background: #f8f8f8;
+@media (hover: hover) {
+  .movie-detail-page .btn-primary:hover {
+    transform: translateY(-2px) scale(1.02);
+    box-shadow: 0 0.5rem 1.25rem rgba(255, 255, 255, 0.12);
+    background: #f8f8f8;
+  }
 }
 
 .movie-detail-page .btn-primary span {
@@ -426,6 +425,7 @@
   color: var(--text-primary);
   cursor: pointer;
   transition: all 0.3s var(--ease-out);
+  /* stylelint-disable-next-line declaration-no-important -- garde le contour clavier éteint sur ce bouton rond comme avant : sans !important, l'ordre de chargement du CSS de la page déciderait de l'affichage du :focus-visible global ; la TV remet son liseré par tv.css */
   outline: none !important;
 }
 
@@ -434,10 +434,12 @@
   height: 1.25rem;
 }
 
-.reset-progress-btn:hover {
-  background: rgba(74, 74, 208, 0.2);
-  border-color: var(--nyx-violet);
-  transform: scale(1.1);
+@media (hover: hover) {
+  .reset-progress-btn:hover {
+    background: rgba(74, 74, 208, 0.2);
+    border-color: var(--nyx-violet);
+    transform: scale(1.1);
+  }
 }
 
 .reset-progress-btn:active {

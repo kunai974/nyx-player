@@ -10,7 +10,10 @@ import { tmdbRateLimiter } from './rateLimiter';
 import { getTmdbLanguage } from '../utils/tmdbLanguage';
 import { supabase } from './supabaseClient';
 import { getCachedDetails, cacheSeasonDetails } from './tmdbCacheSqlite';
+import { getPersonalTmdbKey, directTmdbRequest, type PersonalTmdbKey } from './tmdbPersonalKey';
+import { isGuestRelayAvailable, isGuestRelayStopped, noteGuestRelayResponse, takeGuestRelayToken } from './guestRelay';
 import { createLogger } from '../utils/logger';
+import { prises } from './outilsTest';
 
 const log = createLogger('TMDB');
 
@@ -19,34 +22,160 @@ const TMDB_IMAGE_BASE_URL = 'https://image.tmdb.org/t/p';
 // Proxy URL — calls go through Supabase Edge Function (TMDB key is server-side)
 const PROXY_BASE_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/tmdb-proxy`;
 
-// Fetch helper routed through Supabase proxy with JWT auth
-const tmdbFetch = async <T>(endpoint: string, params: Record<string, string> = {}): Promise<T> => {
-  // Get current Supabase session for JWT
-  const { data: { session } } = await supabase.auth.getSession();
-  if (!session?.access_token) throw new Error('Not authenticated — Supabase session required');
+/**
+ * Fiches TMDB impossibles à demander : ni compte connecté, ni clé TMDB personnelle, ni relais de
+ * l'invité disponible (en pause ou limite du jour atteinte). L'app montre alors les images et
+ * résumés du fournisseur.
+ */
+export class TmdbUnavailableError extends Error {
+  constructor() {
+    super('TMDB unavailable: no account and no personal TMDB key');
+    this.name = 'TmdbUnavailableError';
+  }
+}
 
-  const url = new URL(`${PROXY_BASE_URL}${endpoint}`);
+/**
+ * Accès à TMDB, dans cet ordre : le relais de Nyx avec le jeton du compte ; sinon TMDB directement
+ * avec la clé personnelle (rien sur nos serveurs) ; sinon, pour un invité, le relais de Nyx avec son
+ * jeton d'invité, dans ses limites.
+ */
+type TmdbAccess =
+  | { kind: 'proxy'; accessToken: string; guest: boolean }
+  | { kind: 'direct'; key: PersonalTmdbKey };
+
+type AccessKind = 'proxy' | 'direct' | 'guest';
+
+/** Le chemin qui servirait, sans rien envoyer ni compter (pas de connexion d'invité) */
+async function peekTmdbAccess(): Promise<AccessKind | null> {
+  const { data: { session } } = await supabase.auth.getSession();
+  if (session?.access_token) return 'proxy';
+  if (await getPersonalTmdbKey()) return 'direct';
+  return isGuestRelayAvailable() ? 'guest' : null;
+}
+
+/** Le chemin d'UNE demande : pour un invité, le jeton est pris (et la demande comptée) ici */
+async function resolveTmdbAccess(): Promise<TmdbAccess | null> {
+  const { data: { session } } = await supabase.auth.getSession();
+  if (session?.access_token) return { kind: 'proxy', accessToken: session.access_token, guest: false };
+  const key = await getPersonalTmdbKey();
+  if (key) return { kind: 'direct', key };
+  const guestToken = await takeGuestRelayToken();
+  return guestToken ? { kind: 'proxy', accessToken: guestToken, guest: true } : null;
+}
+
+/**
+ * Chemin des demandes à TMDB : `proxy` (relais de Nyx, compté dans son quota, compte ou invité),
+ * `direct` (clé personnelle, sans nos serveurs), ou null si aucune demande n'est possible.
+ */
+export async function getTmdbAccessKind(): Promise<'proxy' | 'direct' | null> {
+  const kind = await peekTmdbAccess();
+  return kind === 'guest' ? 'proxy' : kind;
+}
+
+/** Vrai si le relais servirait un compte connecté (pas un invité, au quota bien plus petit) */
+export async function isTmdbAccountRelay(): Promise<boolean> {
+  return (await peekTmdbAccess()) === 'proxy';
+}
+
+/** Vrai si l'app peut demander des fiches à TMDB (compte connecté, clé personnelle ou relais de l'invité) */
+export async function isTmdbAvailable(): Promise<boolean> {
+  return (await peekTmdbAccess()) !== null;
+}
+
+/** Version du banc : adresse du faux relais en cours, pour servir ses fonds fictifs (voir tmdbImageUrl). */
+let bancRelaisImages: string | null = null;
+
+/**
+ * Adresse du relais. Les versions du banc de tests (VITE_BANC=1, que le garde-fou de publication
+ * refuse hors des scripts d'audit) demandent au faux relais du faux fournisseur qui leur sert de
+ * source, jamais au relais de production (le banc y faisait des milliers d'appels par jour) ; sans
+ * faux fournisseur, aucune demande. Dans une version normale, la branche disparaît à la compilation.
+ */
+async function proxyBaseUrl(): Promise<string> {
+  if (import.meta.env.VITE_BANC === '1') {
+    const { StorageService } = await import('./storage');
+    const faux = prises.relaisTmdbBanc?.(await StorageService.getCredentials().catch(() => null));
+    if (!faux) throw new TmdbUnavailableError();
+    bancRelaisImages = faux;
+    return faux;
+  }
+  return PROXY_BASE_URL;
+}
+
+/**
+ * Version du banc : connaît le faux relais avant de fabriquer des adresses d'images, y compris quand les
+ * listes viennent du cache (aucune demande à TMDB avant). Sans effet dans une version normale.
+ */
+async function prepareBancImages(): Promise<void> {
+  if (import.meta.env.VITE_BANC === '1') await proxyBaseUrl().catch(() => undefined);
+}
+
+function proxyRequest(
+  base: string,
+  endpoint: string,
+  params: Record<string, string>,
+  accessToken: string,
+  repeated: Record<string, readonly string[]> = {},
+): { url: string; headers: Record<string, string> } {
+  const url = new URL(`${base}${endpoint}`);
+  Object.entries(params).forEach(([key, value]) => {
+    if (value) url.searchParams.append(key, value);
+  });
+  Object.entries(repeated).forEach(([key, values]) => {
+    values.forEach((value) => url.searchParams.append(key, value));
+  });
+  return {
+    url: url.toString(),
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      apikey: import.meta.env.VITE_SUPABASE_ANON_KEY,
+      'Content-Type': 'application/json',
+    },
+  };
+}
+
+/** Accès par la clé personnelle seulement (jamais le relais de Nyx), sinon null */
+async function resolveDirectAccess(): Promise<TmdbAccess | null> {
+  const key = await getPersonalTmdbKey();
+  return key ? { kind: 'direct', key } : null;
+}
+
+// Fetch helper: Supabase proxy with the account JWT, or TMDB directly with the personal key
+/** `directOnly` : jamais par le relais de Nyx (recherches en nombre, hors de son quota commun) */
+/** `relayOnly` : paramètres répétés que seul le relais comprend (recherche groupée) ; sans relais, rien ne part */
+const tmdbFetch = async <T>(
+  endpoint: string,
+  params: Record<string, string> = {},
+  directOnly = false,
+  relayOnly?: Record<string, readonly string[]>,
+): Promise<T> => {
+  const access = directOnly ? await resolveDirectAccess() : await resolveTmdbAccess();
+  if (!access || (relayOnly && access.kind !== 'proxy')) throw new TmdbUnavailableError();
 
   // Add default language based on current i18n setting
   params.language = params.language || getTmdbLanguage();
 
-  Object.entries(params).forEach(([key, value]) => {
-    if (value) url.searchParams.append(key, value);
-  });
+  const { url, headers } = access.kind === 'proxy'
+    ? proxyRequest(await proxyBaseUrl(), endpoint, params, access.accessToken, relayOnly)
+    : directTmdbRequest(endpoint, params, access.key);
 
   // Execute through rate limiter (client-side safety net)
   return tmdbRateLimiter.execute(async () => {
-    const response = await fetch(url.toString(), {
-      headers: {
-        Authorization: `Bearer ${session.access_token}`,
-        apikey: import.meta.env.VITE_SUPABASE_ANON_KEY,
-        'Content-Type': 'application/json',
-      },
-    });
+    // Invité : une demande en file ne part plus après un refus du relais ou hors de l'espace invité
+    if (access.kind === 'proxy' && access.guest && isGuestRelayStopped()) throw new TmdbUnavailableError();
+    const response = await fetch(url, { headers });
+
+    // Refus du relais pour un invité : la pause demandée est retenue, l'écran passe au fournisseur
+    if (access.kind === 'proxy' && access.guest && !response.ok
+        && (response.status === 401 || response.status === 429 || response.status === 503)) {
+      const body: unknown = await response.json().catch(() => null);
+      await noteGuestRelayResponse(response.status, body, access.accessToken, response.headers?.get('Retry-After'));
+      throw new TmdbUnavailableError();
+    }
 
     if (!response.ok) {
       const error = new Error(
-        `TMDB Proxy error: ${response.status} ${response.statusText}`
+        `TMDB error (${access.kind}): ${response.status} ${response.statusText}`
       ) as Error & { status: number };
       error.status = response.status;
       throw error;
@@ -64,6 +193,10 @@ const tmdbImageUrl = (
   size: 'w92' | 'w154' | 'w185' | 'w342' | 'w500' | 'w780' | 'w1280' | 'original' = 'w500'
 ): string | null => {
   if (!path) return null;
+  // Version du banc : le fond fictif du faux relais est une vraie image locale (sinon la bannière attend
+  // jusqu'à 12 s une image qui n'existe pas chez TMDB). Les affiches gardent l'adresse TMDB : le cloud
+  // ne garde une affiche que si elle en est une.
+  if (import.meta.env.VITE_BANC === '1' && bancRelaisImages && path.startsWith('/banc-fond-')) return `${bancRelaisImages}/img/fond.png`;
   return `${TMDB_IMAGE_BASE_URL}/${size}${path}`;
 };
 
@@ -72,12 +205,13 @@ const tmdbImageUrl = (
  */
 const searchMovie = async (
   query: string,
-  year?: string
+  year?: string,
+  options?: { directOnly?: boolean },
 ): Promise<TmdbSearchResponse<TmdbMovieSearchResult>> => {
   const params: Record<string, string> = { query };
   if (year) params.year = year;
 
-  return tmdbFetch<TmdbSearchResponse<TmdbMovieSearchResult>>('/search/movie', params);
+  return tmdbFetch<TmdbSearchResponse<TmdbMovieSearchResult>>('/search/movie', params, options?.directOnly);
 };
 
 /**
@@ -85,12 +219,57 @@ const searchMovie = async (
  */
 const searchTv = async (
   query: string,
-  year?: string
+  year?: string,
+  options?: { directOnly?: boolean },
 ): Promise<TmdbSearchResponse<TmdbTvSearchResult>> => {
   const params: Record<string, string> = { query };
   if (year) params.first_air_date_year = year;
 
-  return tmdbFetch<TmdbSearchResponse<TmdbTvSearchResult>>('/search/tv', params);
+  return tmdbFetch<TmdbSearchResponse<TmdbTvSearchResult>>('/search/tv', params, options?.directOnly);
+};
+
+/** Titres au plus par recherche groupée (même plafond que le relais) */
+export const TITLE_BATCH_MAX = 20;
+/** Longueur au plus des titres d'un appel, une fois dans l'adresse (les passerelles refusent les adresses trop longues) */
+export const TITLE_BATCH_MAX_URL_CHARS = 6000;
+
+/** Titres découpés en appels : `TITLE_BATCH_MAX` au plus, et une adresse de taille raisonnable */
+export function titleBatchChunks<T extends { query: string }>(items: readonly T[]): T[][] {
+  const chunks: T[][] = [];
+  let current: T[] = [];
+  let chars = 0;
+  for (const item of items) {
+    const size = encodeURIComponent(item.query).length + 16;
+    if (current.length > 0 && (current.length >= TITLE_BATCH_MAX || chars + size > TITLE_BATCH_MAX_URL_CHARS)) {
+      chunks.push(current);
+      current = [];
+      chars = 0;
+    }
+    current.push(item);
+    chars += size;
+  }
+  if (current.length > 0) chunks.push(current);
+  return chunks;
+}
+
+/** Un titre d'une recherche groupée, et sa réponse : `ok` avec les premiers résultats, sinon pas cherché */
+export interface TitleBatchItem { kind: 'movie' | 'tv'; query: string; year?: number }
+export interface TitleBatchAnswer {
+  kind: 'movie' | 'tv';
+  query: string;
+  status: 'ok' | 'limited' | 'error';
+  results?: Array<Partial<TmdbMovieSearchResult & TmdbTvSearchResult> & { id: number }>;
+}
+
+/**
+ * Recherche groupée par le relais : jusqu'à `TITLE_BATCH_MAX` titres en un appel (le relais cherche chacun,
+ * cache partagé d'abord). Relais seulement : avec la clé personnelle ou sans accès, TmdbUnavailableError.
+ */
+const searchTitlesBatch = async (items: readonly TitleBatchItem[]): Promise<TitleBatchAnswer[]> => {
+  if (items.length === 0 || items.length > TITLE_BATCH_MAX) throw new Error('[TMDB] title batch size out of range');
+  const t = items.map((item) => `${item.kind}:${item.year ?? ''}:${item.query}`);
+  const answer = await tmdbFetch<{ results?: unknown }>('/search/batch', {}, false, { t });
+  return Array.isArray(answer.results) ? answer.results as TitleBatchAnswer[] : [];
 };
 
 /**
@@ -288,12 +467,14 @@ const getSeasonDetailsWithFallback = async (
 const tmdb = {
   searchMovie,
   searchTv,
+  searchTitlesBatch,
   getMovieDetails,
   getMovieRecommendations,
   getTvDetails,
   getSeasonDetails,
   getSeasonDetailsWithFallback,
   imageUrl: tmdbImageUrl,
+  prepareBancImages,
   getTrending,
   getNowPlaying,
   getOnTheAir,

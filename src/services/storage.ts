@@ -66,6 +66,16 @@ async function deletePassword(user: string): Promise<void> {
   await invoke('plugin:nyx-android|secure_delete', { key: androidKey(user) });
 }
 
+/**
+ * Accès brut au coffre (ordinateur ou Android), pour les entrées des sources
+ * (services/sources/sourceVault.ts). Côté ordinateur, Rust n'accepte que les comptes de Nyx.
+ */
+export const secretVault = {
+  read: getPassword,
+  write: setPassword,
+  remove: deletePassword,
+};
+
 /** Compte du coffre : `iptv_credentials_<uid>` par utilisateur Supabase (dynamique). */
 let keyringUser = 'iptv_credentials';
 

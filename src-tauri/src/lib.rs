@@ -7,12 +7,18 @@ mod app_update;
 mod catalog_light;
 mod catalog_parser;
 mod catalog_refresh;
+mod catalog_split;
 mod db_activity;
 mod dns;
 mod epg_parser;
+mod fusion_index;
+mod fusion_rules;
 mod http;
 mod ingestion;
 mod logging;
+mod m3u_ingest;
+mod m3u_local_file;
+mod m3u_parser;
 mod memory;
 // Historical schema journal, kept only to check old database layouts in tests
 #[cfg(test)]
@@ -22,6 +28,7 @@ mod mpv_tls;
 mod navigation;
 mod playback;
 mod poster_thumbs;
+mod public_net;
 mod schema;
 mod secret_vault;
 mod secure_db;
@@ -96,6 +103,8 @@ pub fn run() {
 
             // A guide download left by an app killed during a sync (up to ≈ 200 MB)
             epg_parser::remove_leftover_download(app.handle());
+            // Catalogues de sources supprimées que Windows tenait encore : effacés maintenant
+            storage::sweep_pending_catalog_deletions(&storage::get_data_dir(app.handle()));
             // Affiches réduites : le dossier est rangé à la première demande, avant le lancement des fils
             poster_thumbs::install(app.handle());
 
@@ -177,9 +186,15 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             // IPTV API
             ingestion::iptv_fetch,
+            ingestion::iptv_fetch_public,
             // Catalog Ingestion (SQLite-First)
             ingestion::ingest_catalog,
             ingestion::cancel_catalog_ingestion,
+            m3u_ingest::ingest_m3u,
+            m3u_ingest::cancel_m3u_ingestion,
+            m3u_local_file::m3u_file_write,
+            m3u_local_file::m3u_file_finish,
+            m3u_local_file::m3u_file_abort,
             // Actualisation en arrière-plan, par comparaison
             catalog_refresh::refresh_catalog,
             catalog_refresh::abort_catalog_refresh,
@@ -197,6 +212,13 @@ pub fn run() {
             secret_vault::nyx_secret_delete,
             // Full Reset
             storage::full_reset,
+            // Catalogue d'une source supprimée
+            storage::delete_source_catalog,
+            // Recopie du catalogue du compte dans le fichier de sa première source
+            catalog_split::copy_catalog_to_source,
+            // Index commun aux sources d'un espace (construction, arrêt pendant une vidéo)
+            fusion_index::build_fusion_index,
+            fusion_index::abort_fusion_index,
             // Playback (HTTP status of a stream mpv failed to load)
             playback::probe_stream_status,
             // Lecteur Windows : seule porte vers mpv, en liste blanche

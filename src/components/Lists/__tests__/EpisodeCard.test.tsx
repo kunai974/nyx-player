@@ -156,7 +156,24 @@ describe('EpisodeCard', () => {
             // Simuler erreur de chargement
             fireEvent.error(img);
 
-            expect(img).toHaveAttribute('src', 'https://example.com/fallback.jpg');
+            expect(screen.getByRole('img')).toHaveAttribute('src', 'https://example.com/fallback.jpg');
+        });
+
+        it('sans aucune image qui charge, jamais d\'image cassée : la vignette reste un fond uni', () => {
+            render(<EpisodeCard {...defaultProps} />);
+
+            fireEvent.error(screen.getByRole('img'));
+            fireEvent.error(screen.getByRole('img'));
+
+            expect(screen.queryByRole('img')).toBeNull();
+            expect(screen.getByText('Épisode 1')).toBeInTheDocument();
+        });
+
+        it('liste sans image ni affiche (M3U) : aucune balise image vide', () => {
+            render(<EpisodeCard {...defaultProps} imageUrl="" posterFallback="" />);
+
+            expect(screen.queryByRole('img')).toBeNull();
+            expect(screen.getByText('Épisode 1')).toBeInTheDocument();
         });
     });
 });

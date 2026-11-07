@@ -45,15 +45,22 @@
   transition: opacity 0.2s ease;
 }
 
-.mode-pill:hover .mode-pill-icon,
 .mode-pill.active .mode-pill-icon {
   opacity: 1;
 }
 
-.mode-pill:hover {
-  background: var(--active-overlay);
-  border-color: rgba(255, 255, 255, 0.3);
-  color: var(--text-primary);
+@media (hover: hover) {
+  .mode-pill:hover .mode-pill-icon {
+    opacity: 1;
+  }
+}
+
+@media (hover: hover) {
+  .mode-pill:hover {
+    background: var(--active-overlay);
+    border-color: rgba(255, 255, 255, 0.3);
+    color: var(--text-primary);
+  }
 }
 
 .mode-pill.active {

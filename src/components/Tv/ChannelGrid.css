@@ -36,9 +36,11 @@
 /* Empêche le scroll horizontal sur le conteneur react-window */
 /* ET applique le fade scroll effect */
 .channel-grid>div {
+    /* stylelint-disable-next-line declaration-no-important -- react-window pose overflow en ligne sur ce conteneur : seul !important le bat */
     overflow-x: hidden !important;
 
     /* Padding pour que le dernier item ne soit pas masqué par le fade du bas */
+    /* stylelint-disable-next-line declaration-no-important -- zone fluidité (grille Live TV, validée) : garde-fou conservé tel quel, non retiré faute de mesure sur la box */
     padding-bottom: 3rem !important;
     box-sizing: content-box;
 

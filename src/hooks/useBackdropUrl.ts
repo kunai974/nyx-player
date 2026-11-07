@@ -41,10 +41,14 @@ export function useBackdropUrl(
       return tmdb.imageUrl(tmdbBackdrops[index].file_path, backdropImageSize()) || '';
     }
 
-    // Priority 2: Xtream backdrop_path array
-    if (Array.isArray(fallbackBackdrops) && fallbackBackdrops.length > 0) {
-      const index = backdropIndex % fallbackBackdrops.length;
-      return fallbackBackdrops[index];
+    // Priority 2: Xtream backdrop_path array (des fournisseurs y mettent des chaînes vides : écartées,
+    // sinon la fiche n'avait aucune image de fond au lieu de l'affiche)
+    const xtreamBackdrops = Array.isArray(fallbackBackdrops)
+      ? fallbackBackdrops.filter((url) => typeof url === 'string' && url.trim() !== '')
+      : [];
+    if (xtreamBackdrops.length > 0) {
+      const index = backdropIndex % xtreamBackdrops.length;
+      return xtreamBackdrops[index];
     }
 
     // Priority 3: TMDB single backdrop

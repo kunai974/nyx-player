@@ -22,11 +22,8 @@ export interface GroupedItem<T> {
  * Groupe les items par TMDB ID (instant, O(n)), dans l'ordre où ils arrivent (rang de la recherche).
  *
  * - Les versions d'un même titre (même numéro TMDB) forment un seul groupe (`tmdb_<id>`).
- * - Un titre sans numéro TMDB forme son propre groupe (`item_<id>`) quand `keepOrphans` est vrai :
- *   chez un fournisseur qui ne donne aucun numéro TMDB dans ses listes, la recherche ne trouverait
- *   sinon aucun film ni aucune série alors que tout le catalogue est chargé. Quand le catalogue a des
- *   titres reliés à TMDB, les titres sans numéro restent écartés (catégories techniques, doublons),
- *   comme sur l'accueil.
+ * - Un titre sans numéro TMDB forme son propre groupe (`item_<id>`) quand `keepOrphans` est vrai
+ *   (la recherche : sinon un titre sans fiche n'y serait jamais trouvé) ; écarté sinon.
  * - Utilise normalizeTmdbId() pour gérer les cas string "0", null, undefined.
  *
  * @example

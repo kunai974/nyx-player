@@ -17,6 +17,9 @@ vi.mock('../tmdbCacheSqlite', () => ({
     cacheSeriesDetails: vi.fn(async () => {}),
 }));
 
+let backgroundAllowed = true;
+vi.mock('../guestRelay', () => ({ guestRelayAllowsBackground: () => backgroundAllowed }));
+
 let dbFile = 'nyxplayer_a.db';
 vi.mock('../dbCore', () => ({
     getDatabaseFileName: vi.fn(() => dbFile),
@@ -33,6 +36,7 @@ beforeEach(() => {
     resetMissingWatchlistDetails();
     vi.clearAllMocks();
     dbFile = 'nyxplayer_a.db';
+    backgroundAllowed = true;
 });
 
 describe('requestMissingWatchlistDetails', () => {
@@ -76,5 +80,13 @@ describe('requestMissingWatchlistDetails', () => {
         requestMissingWatchlistDetails([{ tmdb_id: 42, type: 'movie' }], 2000);
         await flush();
         expect(tmdb.getMovieDetails).toHaveBeenCalledTimes(2);
+    });
+
+    it('stops when a guest has used most of the day on the shared relay', async () => {
+        backgroundAllowed = false;
+        requestMissingWatchlistDetails([{ tmdb_id: 42, type: 'movie' }, { tmdb_id: 7, type: 'series' }]);
+        await flush();
+        expect(tmdb.getMovieDetails).not.toHaveBeenCalled();
+        expect(tmdb.getTvDetails).not.toHaveBeenCalled();
     });
 });

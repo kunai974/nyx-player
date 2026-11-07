@@ -62,9 +62,11 @@
     line-height: 1;
 }
 
-.catmgr-close:hover {
-    color: var(--text-primary);
-    background: var(--hover-overlay);
+@media (hover: hover) {
+  .catmgr-close:hover {
+      color: var(--text-primary);
+      background: var(--hover-overlay);
+  }
 }
 
 /* ============================================================================
@@ -95,9 +97,11 @@
     white-space: nowrap;
 }
 
-.catmgr-tab:hover {
-    background: var(--hover-overlay);
-    color: var(--text-primary);
+@media (hover: hover) {
+  .catmgr-tab:hover {
+      background: var(--hover-overlay);
+      color: var(--text-primary);
+  }
 }
 
 .catmgr-tab.active {
@@ -177,8 +181,10 @@
     margin-top: 0.375rem;
 }
 
-.catmgr-search-clear:hover {
-    color: var(--text-primary);
+@media (hover: hover) {
+  .catmgr-search-clear:hover {
+      color: var(--text-primary);
+  }
 }
 
 /* ============================================================================
@@ -226,8 +232,10 @@
     user-select: none;
 }
 
-.catmgr-item:hover {
-    background: var(--hover-overlay);
+@media (hover: hover) {
+  .catmgr-item:hover {
+      background: var(--hover-overlay);
+  }
 }
 
 .catmgr-item.hidden-category {

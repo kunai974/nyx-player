@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import logoSecondaireBlanc from '../assets/brand/logo-secondaire-blanc.svg';
 import { useTranslation } from 'react-i18next';
 import type { XtreamCredentials } from '../types/iptv';
@@ -6,31 +6,53 @@ import { useSupabaseAuth } from '../contexts/SupabaseAuthContext';
 import { useDevOverrides } from '../contexts/DevOverrideContext';
 import NyxButton from './Common/NyxButton';
 import { EyeOpen, EyeClosed } from './Common/EyeIcons';
-import { readM3uParam, splitPastedXtreamAddress } from '../utils/xtreamCredentials';
-import { normalizeProviderHost, noteTypedProviderHost } from '../utils/providerHost';
+import { noteTypedProviderHost } from '../utils/providerHost';
+import { providerFormToCredentials, type ProviderFormInput } from '../utils/providerForm';
+import TvLinkPanel from './TvLink/TvLinkPanel';
+import { peekPendingTvLinkProvider, takePendingTvLinkProvider } from '../services/tvLink/pendingProvider';
+import { checkTvLinkProvider } from '../services/tvLink/tvLinkProviderCheck';
+import { announceTvLinkConnection } from '../services/tvLink/tvLinkSummary';
+import type { TvLinkAck } from '../services/tvLink/tvLinkSession';
+import type { TvLinkPayload } from '../services/tvLink/tvLinkPayload';
 import { isTv } from '../utils/platform';
 import LocalDatabaseDamagedNotice from './Common/LocalDatabaseDamagedNotice';
+import LocalM3uFileButton from './Common/LocalM3uFileButton';
 
 interface LoginProps {
   onLogin: (creds: XtreamCredentials) => void;
   isLoading: boolean;
   progress: number;
   onBackToProfiles?: () => void;
+  /** Sans compte (invité) : « Retour » ramène à l'accueil, et il n'y a pas de compte à quitter */
+  guest?: boolean;
 }
 
-const Login: React.FC<LoginProps> = ({ onLogin, isLoading, progress, onBackToProfiles }) => {
+const Login: React.FC<LoginProps> = ({ onLogin, isLoading, progress, onBackToProfiles, guest = false }) => {
   const { t, i18n } = useTranslation(['auth', 'common']);
   const { signOut } = useSupabaseAuth();
   const { overrides } = useDevOverrides();
   const xp = overrides.xtreamPage;
 
-  const [mode, setMode] = useState<'xtream' | 'm3u'>('xtream');
-  const [error, setError] = useState<string | null>(null);
-  const [host, setHost] = useState('');
-  const [username, setUsername] = useState('');
-  const [password, setPassword] = useState('');
+  // Compte et fournisseur envoyés ensemble par QR code depuis l'accueil de la TV : le fournisseur
+  // attendait cet écran. Il remplit le formulaire (pour corriger sans tout retaper si le serveur
+  // refuse), et la connexion part seule s'il est complet. Lu sans être consommé ici : React peut
+  // appeler cette initialisation deux fois, et la seconde trouvait le formulaire vide
+  const [arrival] = useState(() => {
+    const input = peekPendingTvLinkProvider();
+    return input ? { input, result: providerFormToCredentials(input) } : null;
+  });
+  const arrivalForm = arrival?.input ?? null;
+
+  const [mode, setMode] = useState<'xtream' | 'm3u'>(arrivalForm?.type === 'm3u' ? 'm3u' : 'xtream');
+  const [error, setError] = useState<string | null>(
+    arrival && 'errorKey' in arrival.result ? t(arrival.result.errorKey) : null,
+  );
+  const [host, setHost] = useState(arrivalForm?.type === 'xtream' ? arrivalForm.host : '');
+  const [username, setUsername] = useState(arrivalForm?.type === 'xtream' ? arrivalForm.username : '');
+  const [password, setPassword] = useState(arrivalForm?.type === 'xtream' ? arrivalForm.password : '');
   const [showPassword, setShowPassword] = useState(false);
-  const [m3uLink, setM3uLink] = useState('');
+  const [m3uLink, setM3uLink] = useState(arrivalForm?.type === 'm3u' ? arrivalForm.link : '');
+  const containerRef = useRef<HTMLDivElement>(null);
   // DevPanel overrides
   const effectiveLoading = xp.forceLoading || isLoading;
   const effectiveProgress = xp.forceProgress ?? progress;
@@ -46,44 +68,71 @@ const Login: React.FC<LoginProps> = ({ onLogin, isLoading, progress, onBackToPro
     // eslint-disable-next-line react-hooks/exhaustive-deps -- mode lu sans abonnement
   }, [xp.forceMode]);
 
+  // Fournisseur venu du téléphone (QR code), déjà vérifié auprès de son serveur : le formulaire est
+  // rempli (pour corriger sans tout retaper si le chargement échoue), puis la connexion part
+  const applyPhoneProvider = useCallback((input: ProviderFormInput, creds: XtreamCredentials, typedHost: string): void => {
+    if (input.type === 'm3u') {
+      setMode('m3u');
+      setM3uLink(input.link);
+    } else {
+      setMode('xtream');
+      setHost(input.host);
+      setUsername(input.username);
+      setPassword(input.password);
+    }
+    setError(null);
+    noteTypedProviderHost(typedHost);
+    onLogin(creds);
+  }, [onLogin]);
+
+  // Une seule fois, même si l'écran est monté deux fois (mode strict de React en développement)
+  const arrivalSent = useRef(false);
+  useEffect(() => {
+    if (arrivalSent.current || !arrival) return;
+    arrivalSent.current = true;
+    // Consommé ici, une fois : il ne resservira ni à un autre écran ni à un autre profil
+    if (!takePendingTvLinkProvider() || !('creds' in arrival.result)) return;
+    noteTypedProviderHost(arrival.result.typedHost);
+    onLogin(arrival.result.creds);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- fournisseur lu une fois à l'ouverture de l'écran
+  }, []);
+
+  // Pendant un chargement, un envoi du téléphone attend (« occupé ») : il ne remplace pas la connexion en cours
+  const loadingRef = useRef(effectiveLoading);
+  useEffect(() => {
+    loadingRef.current = effectiveLoading;
+  }, [effectiveLoading]);
+  // Écran quitté pendant la vérification (Retour aux profils) : la connexion ne part plus
+  const mountedRef = useRef(true);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => { mountedRef.current = false; };
+  }, []);
+  const handlePhonePayload = useCallback(async (payload: TvLinkPayload): Promise<TvLinkAck> => {
+    if (!payload.provider) return { ok: false, reason: 'invalid' };
+    if (loadingRef.current) return { ok: false, reason: 'busy' };
+    const check = await checkTvLinkProvider(payload.provider);
+    if (!mountedRef.current) return { ok: false, reason: 'closed' };
+    if (!check.ok) return { ok: false, reason: check.reason };
+    if (loadingRef.current) return { ok: false, reason: 'busy' };
+    applyPhoneProvider(payload.provider, check.creds, check.typedHost);
+    announceTvLinkConnection({ provider: payload.provider });
+    return { ok: true };
+  }, [applyPhoneProvider]);
+
   const handleSubmit = (e: React.FormEvent): void => {
     e.preventDefault();
     setError(null);
 
-    if (mode === 'm3u') {
-      try {
-        const url = new URL(m3uLink);
-        noteTypedProviderHost('');
-        const host = normalizeProviderHost(`${url.protocol}//${url.host}`);
-        // « + » gardé tel quel dans les identifiants
-        const username = readM3uParam(url, 'username');
-        const password = readM3uParam(url, 'password');
-
-        if (!host || !username || !password) {
-          setError(t('error_m3u_missing_info'));
-          return;
-        }
-
-        onLogin({ host, username, password });
-      } catch {
-        setError(t('error_m3u_invalid'));
-      }
+    const result = providerFormToCredentials(
+      mode === 'm3u' ? { type: 'm3u', link: m3uLink } : { type: 'xtream', host, username, password },
+    );
+    if ('errorKey' in result) {
+      setError(t(result.errorKey));
       return;
     }
-
-    // Adresse complète collée (`…/player_api.php?username=…`) : le serveur seul, et les identifiants
-    // qu'elle contient pour les champs laissés vides
-    const pasted = splitPastedXtreamAddress(host);
-    const user = username || pasted.username;
-    const pass = password || pasted.password;
-    if (!pasted.host.trim() || !user || !pass) {
-      setError(t('error_missing_fields'));
-      return;
-    }
-    // Adresse nettoyée (espaces, « / » final, majuscules) : le même serveur écrit autrement n'est pas
-    // pris pour un autre fournisseur
-    noteTypedProviderHost(pasted.host);
-    onLogin({ host: normalizeProviderHost(pasted.host), username: user, password: pass });
+    noteTypedProviderHost(result.typedHost);
+    onLogin(result.creds);
   };
 
   // Télécommande : valider un champ avec OK ne doit pas envoyer le formulaire (les champs suivants sont
@@ -92,7 +141,7 @@ const Login: React.FC<LoginProps> = ({ onLogin, isLoading, progress, onBackToPro
     isTv() ? { 'data-nav-longpress': 'passive', 'data-nav-enter-next': next } : {};
 
   return (
-    <div className="login-container" data-testid="provider-login">
+    <div className="login-container" data-testid="provider-login" ref={containerRef}>
       {/* Globe toggle — langue pré-login (localStorage only) */}
       <button
         data-testid="provider-language"
@@ -210,6 +259,16 @@ const Login: React.FC<LoginProps> = ({ onLogin, isLoading, progress, onBackToPro
               <p className="login-m3u-note">
                 {t('note_m3u')}
               </p>
+              {/* Ou une liste posée sur l'appareil (ordinateur, téléphone) */}
+              <LocalM3uFileButton
+                testId="provider-m3u-file"
+                disabled={effectiveLoading}
+                onError={setError}
+                onImported={(creds) => {
+                  noteTypedProviderHost('');
+                  onLogin(creds);
+                }}
+              />
             </div>
           )}
 
@@ -244,19 +303,28 @@ const Login: React.FC<LoginProps> = ({ onLogin, isLoading, progress, onBackToPro
             onClick={onBackToProfiles}
             disabled={effectiveLoading}
           >
-            ← {t('btn_back_to_profiles')}
+            ← {guest ? t('btn_back_to_welcome') : t('btn_back_to_profiles')}
           </button>
         )}
-        <button
-          data-testid="provider-sign-out"
-          type="button"
-          className="supabase-logout-link"
-          onClick={() => void signOut()}
-          disabled={effectiveLoading}
-        >
-          {t('btn_supabase_logout')}
-        </button>
+        {!guest && (
+          <button
+            data-testid="provider-sign-out"
+            type="button"
+            className="supabase-logout-link"
+            onClick={() => void signOut()}
+            disabled={effectiveLoading}
+          >
+            {t('btn_supabase_logout')}
+          </button>
+        )}
       </div>
+
+      {/* TV : à côté du formulaire, le fournisseur saisi sur le téléphone par QR code, sans clic de plus */}
+      {isTv() && (
+        <aside className="login-phone-side" data-testid="provider-phone-side">
+          <TvLinkPanel mode="provider" onPayload={handlePhonePayload} embedded />
+        </aside>
+      )}
     </div>
   );
 };

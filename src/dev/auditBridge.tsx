@@ -27,12 +27,13 @@ import { useSupabaseAuth } from '../contexts/SupabaseAuthContext';
 import { usePlayer } from '../contexts/PlayerContext';
 import { getProperty } from '../services/player/mpvApi';
 import { getOpenDatabase } from '../services/dbCore';
+import { VERSION_AUDIT, type EcranAudit } from '../services/outilsTest';
 import { natureAdresse, tentativesLecture, type NatureAdresse, type TentativeLecture } from './bancAdresses';
 
-export const AUDIT_BRIDGE_ENABLED = import.meta.env.VITE_AUDIT === '1';
+export const AUDIT_BRIDGE_ENABLED = VERSION_AUDIT;
 
 /** Écrans d'avant l'accueil, affichables par l'outil alors que la session est ouverte. */
-export type AuditScreen = 'account' | 'provider';
+export type AuditScreen = EcranAudit;
 const AUDIT_SCREENS: readonly AuditScreen[] = ['account', 'provider'];
 
 let forcedScreen: AuditScreen | null = null;

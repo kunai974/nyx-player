@@ -34,7 +34,7 @@ import { isPlaybackBusy, onPlaybackBusyChange } from './playbackActivity';
 import { applyPendingSearchChanges } from './searchIndex';
 import { getCurrentSyncUserId } from './syncService';
 import { pushRelinkedProgress } from './progressRelink';
-import { PERF_ENABLED } from '../dev/perfHook';
+import { VERSION_MESURE as PERF_ENABLED } from './outilsTest';
 import { devLog } from '../utils/devLog';
 import { createLogger } from '../utils/logger';
 

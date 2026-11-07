@@ -1,6 +1,6 @@
 [package]
 name = "nyxplayer"
-version = "0.8.1"
+version = "0.9.0"
 description = "Nyx Player — IPTV Player with embedded MPV"
 authors = ["Nyx Player"]
 license = "GPL-3.0-or-later"
@@ -59,7 +59,10 @@ tauri-plugin-mpv = "0.5.2"
 # Coffre du système (identifiants IPTV), atteint seulement par les commandes nyx_secret_* (secret_vault.rs).
 # Mêmes version et moteurs que l'ancien tauri-plugin-keyring 0.1.0 : identifiants de la 0.7.6 retrouvés.
 keyring = { version = "3.6.1", features = ["apple-native", "windows-native", "sync-secret-service"] }
-tauri-plugin-updater = "2"
+# Fonction « zip » coupée : Nyx publie un installeur .exe, jamais une archive .zip, et la bibliothèque zip 4
+# qu'elle ajoutait a des failles sans correctif en version 4 (scripts/test/dependances-rust-securite.test.mjs).
+# Si Nyx publie un jour pour Linux : annoncer l'AppImage brut, car sans « zip » un AppImage en .tar.gz n'est plus ouvert.
+tauri-plugin-updater = { version = "2", default-features = false, features = ["rustls-tls"] }
 reqwest = { version = "0.12", features = ["json"] }
 # Magasin d'autorités du système lu pour mpv.exe (mpv_tls.rs)
 rustls-native-certs = "0.8"

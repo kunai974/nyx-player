@@ -15,6 +15,7 @@
 
 import type { LightIndexes } from '../types/lightIndex';
 import type { PlaybackProgressItem } from './smartContinue';
+import { isStaleTitleLink } from '../utils/lightIndexHelpers';
 
 export type ResumeTarget =
   /** Le numéro enregistré mène toujours à ce titre (ou rien ne permet d'en douter) */
@@ -26,8 +27,12 @@ export type ResumeTarget =
 
 const AS_SAVED: ResumeTarget = { kind: 'as-saved' };
 
-/** Même titre TMDB ? Une entrée du catalogue sans numéro TMDB est acceptée (rien à comparer). */
-const sameTitle = (catalogTmdb: number, tmdbId: number) => catalogTmdb <= 0 || catalogTmdb === tmdbId;
+/**
+ * Même titre TMDB ? Une entrée du catalogue sans numéro TMDB est acceptée (rien à comparer), sauf si elle
+ * avait un lien trouvé par le titre et que son nom a changé : le fournisseur a pu réutiliser ce numéro pour un autre titre.
+ */
+const sameTitle = (current: { tmdbId: number }, tmdbId: number) =>
+  current.tmdbId > 0 ? current.tmdbId === tmdbId : !isStaleTitleLink(current);
 
 export function resolveResumeTarget(
   item: Pick<PlaybackProgressItem, 'id' | 'type' | 'tmdbId' | 'seriesId'>,
@@ -47,7 +52,7 @@ export function resolveResumeTarget(
   // titre est ailleurs. Catalogue de films vide : rien ne permet d'en juger.
   const movieGone = isMovie && !current && indexes.movies.size > 0;
   if (tmdbId <= 0) return movieGone ? { kind: 'unavailable' } : AS_SAVED;
-  if (current && sameTitle(current.tmdbId, tmdbId)) return AS_SAVED;
+  if (current && sameTitle(current, tmdbId)) return AS_SAVED;
 
   const elsewhere = isMovie ? indexes.moviesByTmdb.get(tmdbId) : indexes.seriesByTmdb.get(tmdbId);
   if (elsewhere && elsewhere.id !== sourceId) return { kind: 'relinked', id: elsewhere.id };

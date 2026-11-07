@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-note-exit-requested"
+description = "Enables the note_exit_requested command without any pre-configured scope."
+commands.allow = ["note_exit_requested"]
+
+[[permission]]
+identifier = "deny-note-exit-requested"
+description = "Denies the note_exit_requested command without any pre-configured scope."
+commands.deny = ["note_exit_requested"]

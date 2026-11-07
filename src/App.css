@@ -207,6 +207,7 @@
 
 /* Responsive Root Font Size - Desktop First */
 html {
+  /* stylelint-disable-next-line defensive-css/no-fixed-sizes -- ancre du rem : toute la mise en page en dépend (le changer déplacerait tout) */
   font-size: 16px;
   /* Base: 1920x1080 (FHD) */
   /* Pas de surbrillance bleue au toucher (Android l'ajoute par défaut sur tout élément cliquable) */
@@ -215,6 +216,7 @@ html {
 
 @media (max-width: 1366px) {
   html {
+    /* stylelint-disable-next-line defensive-css/no-fixed-sizes -- ancre du rem : toute la mise en page en dépend (le changer déplacerait tout) */
     font-size: 14px;
   }
 
@@ -223,6 +225,7 @@ html {
 
 @media (min-width: 2560px) {
   html {
+    /* stylelint-disable-next-line defensive-css/no-fixed-sizes -- ancre du rem : toute la mise en page en dépend (le changer déplacerait tout) */
     font-size: 17px;
   }
 
@@ -292,6 +295,7 @@ body {
   height: 100%;
   width: 100%;
   overflow: hidden;
+  /* stylelint-disable-next-line declaration-no-important -- le fond en ligne d'index.html (anti-flash au démarrage) ne se bat que par !important */
   background: var(--bg-gradient) fixed !important;
 }
 
@@ -318,7 +322,7 @@ textarea,
 #root {
   height: 100%;
   width: 100%;
-  background: transparent !important;
+  background: transparent;
   /* Allow body nebula to show through */
   position: relative;
   z-index: 1;
@@ -338,6 +342,7 @@ h6 {
 
 /* Hide background in Player Mode for MPV Transparency */
 body.player-active {
+  /* stylelint-disable-next-line declaration-no-important -- bat le fond !important de html, body ci-dessus : le lecteur doit rester transparent pour la vidéo mpv */
   background: transparent !important;
 }
 
@@ -355,7 +360,7 @@ body.player-active {
 
 /* Player Mode: Make background transparent for MPV video */
 .container.player-active {
-  background: transparent !important;
+  background: transparent;
 }
 
 /* Make html/body/root transparent when player is active (for MPV to show through) */
@@ -363,6 +368,7 @@ html.player-active,
 body.player-active,
 html.player-active #root,
 body.player-active #root {
+  /* stylelint-disable-next-line declaration-no-important -- bat le fond !important de html, body ci-dessus : le lecteur doit rester transparent pour la vidéo mpv */
   background: transparent !important;
 }
 
@@ -413,9 +419,11 @@ body.player-active #root {
 /* peut causer des artefacts visuels avec seulement visibility: hidden */
 .main-ui.is-hidden>* {
   visibility: hidden;
+  /* stylelint-disable declaration-no-important -- triple assurance voulue (voir ci-dessus) : une interface masquée ne doit laisser aucun artefact sur la vidéo, quel que soit l'état des composants */
   opacity: 0 !important;
   backdrop-filter: none !important;
   -webkit-backdrop-filter: none !important;
+  /* stylelint-enable declaration-no-important */
 }
 
 /* Animation d'entrée (retour du player) */
@@ -464,6 +472,7 @@ main {
 /* Physical dimensions in px — sidebar is structural UI, must not inflate with text scale */
 .sidebar {
   box-sizing: border-box;
+  /* stylelint-disable-next-line defensive-css/no-fixed-sizes -- barre latérale structurelle : ne grossit pas avec la taille du texte */
   width: 88px; /* Was 5.5rem */
   position: fixed;
   left: var(--sidebar-m);
@@ -478,6 +487,7 @@ main {
   display: flex;
   flex-direction: column;
   align-items: center;
+  /* stylelint-disable-next-line defensive-css/no-fixed-sizes -- espacement de la barre latérale, structurel (suit la barre de 88 px) */
   padding: 24px 0; /* Was 1.5rem */
   flex-shrink: 0;
   z-index: 1000;
@@ -488,10 +498,12 @@ main {
               border-bottom-color 0.4s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-.sidebar:hover {
-  background: rgba(20, 20, 25, 0.6);
-  border-color: rgba(255, 255, 255, 0.15);
-  border-right-color: rgba(255, 255, 255, 0.05); /* Prevent bleed into SettingsSidebar backdrop-filter */
+@media (hover: hover) {
+  .sidebar:hover {
+    background: rgba(20, 20, 25, 0.6);
+    border-color: rgba(255, 255, 255, 0.15);
+    border-right-color: rgba(255, 255, 255, 0.05); /* Prevent bleed into SettingsSidebar backdrop-filter */
+  }
 }
 
 /* Focus Mode: Hide sidebar on TV tab */
@@ -509,15 +521,19 @@ main {
 }
 
 .logo-image {
+  /* stylelint-disable-next-line defensive-css/no-fixed-sizes -- dimension structurelle de la barre latérale */
   width: 40px; /* Was 2.5rem */
+  /* stylelint-disable-next-line defensive-css/no-fixed-sizes -- dimension structurelle de la barre latérale */
   height: 40px;
   object-fit: contain;
   filter: drop-shadow(0 0 0.5rem rgba(255, 255, 255, 0.15));
   transition: filter var(--duration-normal) var(--ease-out);
 }
 
-.sidebar:hover .logo-image {
-  filter: drop-shadow(0 0 0.5rem rgba(255, 255, 255, 0.15));
+@media (hover: hover) {
+  .sidebar:hover .logo-image {
+    filter: drop-shadow(0 0 0.5rem rgba(255, 255, 255, 0.15));
+  }
 }
 
 .sidebar-nav {
@@ -526,13 +542,16 @@ main {
   flex-direction: column;
   align-items: center;
   justify-content: center;
+  /* stylelint-disable-next-line defensive-css/no-fixed-sizes -- espacement de la barre latérale, structurel (suit la barre de 88 px) */
   gap: 20px; /* Was 1.25rem */
   width: 100%;
   min-height: 0;
 }
 
 .nav-item {
+  /* stylelint-disable-next-line defensive-css/no-fixed-sizes -- dimension structurelle de la barre latérale */
   width: 56px; /* Was 3.5rem */
+  /* stylelint-disable-next-line defensive-css/no-fixed-sizes -- dimension structurelle de la barre latérale */
   height: 56px;
   min-width: 56px;
   min-height: 56px;
@@ -548,14 +567,17 @@ main {
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   padding: 0;
   position: relative;
+  /* stylelint-disable-next-line declaration-no-important -- garde le contour clavier éteint sur les icônes de la barre latérale : sans !important, le :focus-visible global (même poids, plus bas dans le fichier) l'afficherait sous Windows ; la TV remet son liseré par tv.css */
   outline: none !important;
   flex-shrink: 0;
 }
 
-.nav-item:hover {
-  color: #fff;
-  background: rgba(255, 255, 255, 0.08);
-  transform: scale(1.1);
+@media (hover: hover) {
+  .nav-item:hover {
+    color: #fff;
+    background: rgba(255, 255, 255, 0.08);
+    transform: scale(1.1);
+  }
 }
 
 .nav-item.active {
@@ -576,7 +598,9 @@ main {
 }
 
 .nav-icon {
+  /* stylelint-disable-next-line defensive-css/no-fixed-sizes -- dimension structurelle de la barre latérale */
   width: 24px; /* Was 1.5rem */
+  /* stylelint-disable-next-line defensive-css/no-fixed-sizes -- dimension structurelle de la barre latérale */
   height: 24px;
   z-index: 2;
   filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.5));
@@ -593,7 +617,9 @@ main {
   top: 50%;
   left: 50%;
   transform: translate(-50%, -50%);
+  /* stylelint-disable-next-line defensive-css/no-fixed-sizes -- halo dessiné au pixel près avec le bouton de 56 px */
   width: 40px; /* Was 2.5rem */
+  /* stylelint-disable-next-line defensive-css/no-fixed-sizes -- halo dessiné au pixel près avec le bouton de 56 px */
   height: 40px;
   background: radial-gradient(circle, rgba(229, 9, 20, 1) 0%, rgba(180, 7, 16, 0.4) 100%);
   border-radius: 50%;
@@ -616,10 +642,12 @@ main {
   border: 1px solid rgba(255, 255, 255, 0.05);
 }
 
-.logout-button:hover {
-  background: rgba(239, 68, 68, 0.15);
-  border-color: rgba(239, 68, 68, 0.3);
-  color: #ef4444 !important;
+@media (hover: hover) {
+  .logout-button:hover {
+    background: rgba(239, 68, 68, 0.15);
+    border-color: rgba(239, 68, 68, 0.3);
+    color: #ef4444;
+  }
 }
 
 /* =========================================
@@ -629,7 +657,9 @@ main {
   position: absolute;
   top: 2px;
   right: 2px;
+  /* stylelint-disable-next-line defensive-css/no-fixed-sizes -- pastille de notification ronde de 8 px */
   width: 8px;
+  /* stylelint-disable-next-line defensive-css/no-fixed-sizes -- pastille de notification ronde de 8 px */
   height: 8px;
   border-radius: 50%;
   z-index: 10;
@@ -705,9 +735,11 @@ p {
   z-index: var(--z-dropdown);
 }
 
-.lang-toggle:hover {
-  background: rgba(255, 255, 255, 0.15);
-  color: var(--text-primary);
+@media (hover: hover) {
+  .lang-toggle:hover {
+    background: rgba(255, 255, 255, 0.15);
+    color: var(--text-primary);
+  }
 }
 
 .login-box {
@@ -797,9 +829,11 @@ p {
   transition: color var(--duration-fast) var(--ease-out);
 }
 
-.tab-buttons button:hover {
-  color: var(--text-primary);
-  background: rgba(255, 255, 255, 0.05);
+@media (hover: hover) {
+  .tab-buttons button:hover {
+    color: var(--text-primary);
+    background: rgba(255, 255, 255, 0.05);
+  }
 }
 
 .tab-buttons button.active {
@@ -880,9 +914,11 @@ p {
   justify-content: center;
 }
 
-.login-eye-toggle:hover {
-  opacity: 1;
-  color: rgba(255, 255, 255, 0.7);
+@media (hover: hover) {
+  .login-eye-toggle:hover {
+    opacity: 1;
+    color: rgba(255, 255, 255, 0.7);
+  }
 }
 
 /* M3U textarea (extracted from inline styles) */
@@ -919,8 +955,10 @@ p {
   transition: color var(--duration-fast) var(--ease-out);
 }
 
-.login-back-btn:hover {
-  color: var(--text-primary);
+@media (hover: hover) {
+  .login-back-btn:hover {
+    color: var(--text-primary);
+  }
 }
 
 .login-back-btn:disabled {
@@ -943,8 +981,10 @@ p {
   transition: color var(--duration-fast) var(--ease-out);
 }
 
-.supabase-logout-link:hover {
-  color: var(--color-error);
+@media (hover: hover) {
+  .supabase-logout-link:hover {
+    color: var(--color-error);
+  }
 }
 
 .supabase-logout-link:disabled {
@@ -1081,9 +1121,11 @@ p {
   transition: all 0.2s;
 }
 
-.back-button:hover {
-  background-color: var(--accent-color);
-  color: white;
+@media (hover: hover) {
+  .back-button:hover {
+    background-color: var(--accent-color);
+    color: white;
+  }
 }
 
 
@@ -1229,6 +1271,8 @@ p {
   flex-shrink: 0;
 }
 
-.session-error-banner__dismiss:hover {
-  opacity: 1;
+@media (hover: hover) {
+  .session-error-banner__dismiss:hover {
+    opacity: 1;
+  }
 }

@@ -136,6 +136,9 @@ class MpvEngine(
     private var tooSlowReported = false
     private val slowFormats by lazy { activity.getSharedPreferences(SLOW_PREFS, Context.MODE_PRIVATE) }
 
+    /** Ce que fait le lecteur, relu au lancement suivant si l'app a été tuée entre-temps (ExitReports) */
+    private val playerMark by lazy { PlayerMark.prefs(activity) }
+
     /** Regroupement des messages de log identiques (thread d'événements libmpv uniquement) */
     private val logRepeats = LogRepeatFilter()
 
@@ -168,6 +171,9 @@ class MpvEngine(
         lastHttpStatus = null
         tlsFailed = false
         currentUrl = request.url
+        // Un FILE_LOADED en retard du flux précédent ne doit pas marquer celui-ci « en lecture »
+        fileLoaded = false
+        PlayerMark.opening(playerMark, StreamDiagnostics.describeUrl(request.url), System.currentTimeMillis())
         val effective = withAudioFocus(request)
         interruptions.watchNoisy()
         setVideoLayerVisible(true)
@@ -232,6 +238,7 @@ class MpvEngine(
         mediaSession.deactivate()
         surfaceView?.keepScreenOn = false
         mpv?.command(arrayOf("stop"))
+        PlayerMark.clear(playerMark)
         setVideoMargins(0.0, 0.0, 0.0, 0.0)
         setVideoLayerVisible(false)
     }
@@ -324,6 +331,7 @@ class MpvEngine(
         loadGeneration++
         stopRequested = true
         lib?.command(arrayOf("stop"))
+        PlayerMark.clear(playerMark)
         StreamDiagnostics.log(id, "background: stream closed (resume at ${resume.startSeconds}s)")
     }
 
@@ -433,6 +441,7 @@ class MpvEngine(
             it.destroy()
         }
         mpv = null
+        PlayerMark.clear(playerMark)
         webView.setBackgroundColor(APP_BACKGROUND)
         StreamDiagnostics.log(id, "released")
     }
@@ -607,9 +616,10 @@ class MpvEngine(
             MpvEvent.MPV_EVENT_FILE_LOADED -> {
                 loading = false
                 fileLoaded = true
-                main.post { logDecoding(); startSmoothnessCheck(SMOOTH_WARMUP_MS); refreshMediaSession() }
+                main.post { markPlaying(); logDecoding(); startSmoothnessCheck(SMOOTH_WARMUP_MS); refreshMediaSession() }
             }
-            MpvEvent.MPV_EVENT_VIDEO_RECONFIG -> main.post { logDecoding() }
+            // Décodeur changé (Dolby Vision 5 décodé au processeur) : retenu aussi
+            MpvEvent.MPV_EVENT_VIDEO_RECONFIG -> main.post { markPlaying(); logDecoding() }
             MpvEvent.MPV_EVENT_END_FILE -> {
                 val wasLoading = loading && !stopRequested
                 loading = false
@@ -626,6 +636,8 @@ class MpvEngine(
     /** Main thread. Ignored if the user stopped or another load started meanwhile (START_FILE resets the flags). */
     private fun reportLoadFailure(generation: Int) {
         if (generation != loadGeneration || stopRequested) return
+        // Plus rien ne s'ouvre, même quand l'échec n'est pas signalé ci-dessous
+        PlayerMark.clear(playerMark)
         val code = PlaybackPolicy.loadFailureCode(tlsFailed, certificatesAvailable = caFile != null)
         if (!openFailed && lastHttpStatus == null && code == PlaybackPolicy.LOAD_FAILED) return
         // Pas de certificats : le code HTTP d'une redirection n'explique pas l'échec
@@ -783,7 +795,7 @@ class MpvEngine(
                     "smoothness: video at %.0f %% of real time, %.0f %% frames dropped, audio trouble %d"
                         .format(window.progress * 100, window.dropRatio * 100, window.audioTrouble),
                 )
-                if (SmoothnessPolicy.tooSlow(window, bad)) {
+                if (SmoothnessPolicy.tooSlow(bad)) {
                     reportTooSlow(known = false)
                     return@postDelayed
                 }
@@ -819,11 +831,21 @@ class MpvEngine(
         tooSlowReported = true
         val detail = formatDetail()
         StreamDiagnostics.warn(id, "$detail: device too slow" + if (known) " (already seen on this device)" else "")
-        if (!known) formatSignature()?.let { slowFormats.edit().putLong(it, System.currentTimeMillis()).apply() }
+        if (!known) formatSignature()?.takeIf(SmoothnessPolicy::remembers)?.let {
+            slowFormats.edit().putLong(it, System.currentTimeMillis()).apply()
+        }
         emit("error", errorPayload(id, "DEVICE_TOO_SLOW", detail = detail).apply {
             put("continuable", true)
             if (known) put("known", true)
         })
+    }
+
+    /** Main thread. Flux ouvert : codec et décodeur retenus pour le rapport de fermeture (ExitReports). */
+    private fun markPlaying() {
+        if (stopRequested || currentUrl == null || !fileLoaded) return
+        val lib = mpv ?: return
+        // « hevc », « h264 » (video-codec est une phrase) ; « mediacodec », « no »…
+        PlayerMark.playing(playerMark, lib.getPropertyString("video-format"), lib.getPropertyString("hwdec-current"))
     }
 
     private fun logDecoding() {
@@ -838,8 +860,15 @@ class MpvEngine(
         lastDecodingLog = summary
         StreamDiagnostics.log(id, summary)
         // Format déjà trop lourd pour cet appareil : prévenir dès le début, sans attendre les saccades
-        val signature = formatSignature()
-        if (signature != null && slowFormats.contains(signature)) reportTooSlow(known = true)
+        // (décodé au processeur, retenu il y a moins de 7 jours ; sinon le souvenir est effacé)
+        val signature = formatSignature() ?: return
+        if (!slowFormats.contains(signature)) return
+        val savedAt = runCatching { slowFormats.getLong(signature, 0L) }.getOrDefault(0L)
+        if (SmoothnessPolicy.remembers(signature) && SmoothnessPolicy.stillRemembered(savedAt, System.currentTimeMillis())) {
+            reportTooSlow(known = true)
+        } else {
+            slowFormats.edit().remove(signature).apply()
+        }
     }
 
     companion object {

@@ -46,4 +46,15 @@ describe('styles/mobile.css', () => {
     expect(mobileCss).toBeGreaterThan(appCss);
     expect(main).not.toMatch(/import\(\s*['"]\.\/styles\/mobile\.css['"]\s*\)/);
   });
+
+  it('Réglages › Compte sans compte : sur téléphone, texte puis boutons pleine largeur (ils débordaient)', () => {
+    const rule = (sel: string) => {
+      const m = css.match(new RegExp(sel.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\s*\\{([^}]*)\\}'));
+      return m ? m[1] : '';
+    };
+    expect(rule('.nyx-mobile .settings-section--guest .setting-item')).toMatch(/flex-direction:\s*column/);
+    expect(rule('.nyx-mobile .settings-section--guest .settings-form-actions')).toMatch(/flex-direction:\s*column/);
+    expect(rule('.nyx-mobile .settings-section--guest .setting-item .nyx-btn')).toMatch(/width:\s*100%/);
+    expect(read('src/components/Settings/GuestAccountSection.tsx')).toContain('settings-section--guest');
+  });
 });

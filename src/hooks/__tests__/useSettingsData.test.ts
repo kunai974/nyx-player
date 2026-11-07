@@ -16,6 +16,7 @@ vi.mock('../../services/tmdbCacheSqlite', () => ({
   clearCacheByType: vi.fn(),
 }));
 
+vi.mock('../../utils/appNotice', () => ({ showAppNotice: vi.fn() }));
 vi.mock('../../services/playbackProgressService', () => ({
   clearProgressByType: vi.fn(),
 }));
@@ -33,6 +34,7 @@ vi.mock('../../services/fullResetService', () => {
 
 import { useSettingsData } from '../useSettingsData';
 import { getCacheStats, clearCacheByType } from '../../services/tmdbCacheSqlite';
+import { showAppNotice } from '../../utils/appNotice';
 import { clearProgressByType } from '../../services/playbackProgressService';
 import { performFullReset, CloudPurgeError } from '../../services/fullResetService';
 
@@ -82,6 +84,19 @@ describe('useSettingsData', () => {
       expect(result.current.resetModal).toEqual({ isOpen: true, type: 'series' });
       act(() => result.current.closeResetModal());
       expect(result.current.resetModal.isOpen).toBe(false);
+    });
+
+    it('base occupée : message d\'erreur, pas de « réussite » et la fenêtre reste ouverte', async () => {
+      vi.mocked(clearProgressByType).mockRejectedValue(new Error('database is locked'));
+      const { result } = renderHook(() => useSettingsData());
+      await waitFor(() => expect(getCacheStats).toHaveBeenCalled());
+      act(() => result.current.openResetModal('movies'));
+      await act(async () => {
+        await result.current.handleResetConfirm({ positions: true, cache: false });
+      });
+      expect(showAppNotice).toHaveBeenCalledWith('progress_reset_failed');
+      expect(result.current.resetSuccess).toBeNull();
+      expect(result.current.resetModal.isOpen).toBe(true);
     });
 
     it('efface les positions des films et affiche le résultat puis le masque après 3 secondes', async () => {

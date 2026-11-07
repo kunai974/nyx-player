@@ -93,9 +93,11 @@
   transition: color var(--duration-fast) var(--ease-out);
 }
 
-.supabase-auth__tab:hover {
-  color: var(--text-primary);
-  background: var(--hover-overlay);
+@media (hover: hover) {
+  .supabase-auth__tab:hover {
+    color: var(--text-primary);
+    background: var(--hover-overlay);
+  }
 }
 
 .supabase-auth__tab--active {
@@ -193,9 +195,11 @@
   justify-content: center;
 }
 
-.supabase-auth__eye-toggle:hover {
-  opacity: 1;
-  color: rgba(255, 255, 255, 0.7);
+@media (hover: hover) {
+  .supabase-auth__eye-toggle:hover {
+    opacity: 1;
+    color: rgba(255, 255, 255, 0.7);
+  }
 }
 
 /* ---- Submit Button (NyxButton contextual override) ---- */
@@ -295,9 +299,11 @@
   transition: all var(--duration-fast) var(--ease-out);
 }
 
-.supabase-auth__resend:hover:not(:disabled) {
-  background: var(--color-info-subtle);
-  border-color: rgba(88, 166, 255, 0.35);
+@media (hover: hover) {
+  .supabase-auth__resend:hover:not(:disabled) {
+    background: var(--color-info-subtle);
+    border-color: rgba(88, 166, 255, 0.35);
+  }
 }
 
 .supabase-auth__resend:disabled {
@@ -354,13 +360,17 @@
   color: var(--color-warning);
 }
 
-.supabase-auth__email-suggestion-actions button:first-child:hover {
-  background: rgba(245, 158, 11, 0.25);
+@media (hover: hover) {
+  .supabase-auth__email-suggestion-actions button:first-child:hover {
+    background: rgba(245, 158, 11, 0.25);
+  }
 }
 
-.supabase-auth__email-suggestion-actions button:last-child:hover {
-  border-color: var(--border-strong);
-  background: rgba(255, 255, 255, 0.06);
+@media (hover: hover) {
+  .supabase-auth__email-suggestion-actions button:last-child:hover {
+    border-color: var(--border-strong);
+    background: rgba(255, 255, 255, 0.06);
+  }
 }
 
 /* ---- Confirmation hint ---- */
@@ -406,9 +416,11 @@
   margin-top: -0.25rem;
 }
 
-.supabase-auth__forgot:hover {
-  opacity: 0.75;
-  text-decoration: underline;
+@media (hover: hover) {
+  .supabase-auth__forgot:hover {
+    opacity: 0.75;
+    text-decoration: underline;
+  }
 }
 
 /* ---- Forgot password screen (dedicated) ---- */
@@ -456,8 +468,10 @@
   transition: color var(--duration-fast) var(--ease-out);
 }
 
-.supabase-auth__back-link:hover {
-  color: var(--text-primary);
+@media (hover: hover) {
+  .supabase-auth__back-link:hover {
+    color: var(--text-primary);
+  }
 }
 
 /* ---- Terms checkbox ---- */
@@ -492,8 +506,47 @@
   transition: opacity var(--duration-fast) var(--ease-out);
 }
 
-.supabase-auth__terms-link:hover {
-  opacity: 0.75;
+@media (hover: hover) {
+  .supabase-auth__terms-link:hover {
+    opacity: 0.75;
+  }
+}
+
+/* ---- Continuer sans compte : « ou », puis un bouton secondaire (pilule) de taille moyenne ---- */
+.supabase-auth__guest {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-2);
+  margin-top: var(--space-4);
+}
+
+/* « ou » entre deux filets : sépare la connexion du mode invité */
+.supabase-auth__or {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: var(--space-3);
+  width: 100%;
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+}
+
+.supabase-auth__or::before,
+.supabase-auth__or::after {
+  content: "";
+  flex: 1;
+  /* stylelint-disable-next-line defensive-css/no-fixed-sizes -- filet de 1 px : trait fin voulu */
+  height: 1px;
+  background: var(--border-subtle);
+}
+
+.supabase-auth__guest-hint {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+  text-align: center;
+  line-height: var(--leading-tight);
 }
 
 /* ---- Legal footer ---- */
@@ -519,8 +572,10 @@
   transition: color var(--duration-fast) var(--ease-out);
 }
 
-.supabase-auth__legal-footer button:hover {
-  color: var(--nyx-blue-light);
+@media (hover: hover) {
+  .supabase-auth__legal-footer button:hover {
+    color: var(--nyx-blue-light);
+  }
 }
 
 .supabase-auth__legal-footer span {

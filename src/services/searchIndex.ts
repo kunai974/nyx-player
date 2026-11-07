@@ -12,20 +12,44 @@ const log = createLogger('SQLite');
 // ============================================================================
 
 /**
+ * Version de la règle de normalisation des noms (`normalizeName`). Un index fait avec une autre
+ * version est refait une fois, en arrière-plan (`applyPendingSearchChanges`) : les noms y sont
+ * rangés sous l'ancienne forme. Version 2 : toutes les écritures (arabe, cyrillique, grec, chinois…)
+ * et les lettres sans accent séparable (œ, ß, ı, ł…) gardées ; avant, seuls a-z et 0-9 restaient.
+ */
+export const SEARCH_NORM_VERSION = '2';
+
+/**
+ * Lettres qui ne se décomposent pas en lettre + accent (NFD) : traduites comme on les tape sur un
+ * clavier sans ces lettres (« coeur » trouve « Cœur », « kirmizi » trouve « Kırmızı »).
+ */
+const FOLDED_LETTERS: Record<string, string> = {
+  'œ': 'oe', 'æ': 'ae', 'ß': 'ss', 'ø': 'o', 'ł': 'l', 'đ': 'd', 'ð': 'd', 'þ': 'th', 'ı': 'i', 'ħ': 'h', 'ŧ': 't',
+  // Sigma grec de fin de mot : même lettre que σ
+  'ς': 'σ',
+};
+const FOLDED_PATTERN = new RegExp(`[${Object.keys(FOLDED_LETTERS).join('')}]`, 'g');
+
+/**
  * Normalize a name for search indexing.
  * - Lowercase
- * - Remove accents (é → e, ñ → n, etc.)
- * - Remove special characters (keep only letters and numbers)
+ * - Compatibility forms unfolded (NFKD : « Ｔｏｋｙｏ », « ᴴᴰ », « 𝐅𝐫𝐚𝐧𝐜𝐞 », « ﬁ » se tapent normalement)
+ * - Remove accents and other combining marks (é → e, ñ → n, harakat arabes…). Les signes voyelles
+ *   des écritures indiennes ou les dakuten japonais disparaissent aussi : la recherche y est un peu
+ *   moins précise, mais le nom rangé et la requête tapée suivent la même règle et se retrouvent.
+ * - Letters without a separable accent spelled out (œ → oe, ß → ss, ı → i…)
+ * - Remove punctuation and symbols (keep the letters and digits of every script)
  * - Collapse multiple spaces
  */
 export function normalizeName(name: string): string {
   return name
+    .normalize('NFKD')
     .toLowerCase()
-    // Remove accents using NFD normalization
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    // Remove all non-alphanumeric characters (including hyphens, apostrophes, etc.)
-    .replace(/[^a-z0-9\s]/g, '')
+    // Remove accents (NFKD separates them from their letter)
+    .replace(/\p{M}/gu, '')
+    .replace(FOLDED_PATTERN, (letter) => FOLDED_LETTERS[letter] ?? letter)
+    // Remove everything but letters and digits of any script (hyphens, apostrophes, symbols…)
+    .replace(/[^\p{L}\p{N}\s]/gu, '')
     // Collapse multiple spaces into one
     .replace(/\s+/g, ' ')
     .trim();
@@ -97,6 +121,8 @@ export async function rebuildSearchIndex(preloadedData?: {
   await insertSearchRows(database, 'movie', movies);
   await insertSearchRows(database, 'series', series);
   await insertSearchRows(database, 'live', live);
+  // Marque posée avant d'effacer la note : l'app tuée entre les deux ne refait pas tout une fois de plus
+  await markSearchNormVersion(database);
   await clearSearchNotes(database, seq);
 }
 
@@ -139,6 +165,14 @@ async function readSearchSeq(database: SearchDatabase): Promise<string | null> {
   return rows[0]?.value ?? null;
 }
 
+/** Index refait avec la règle de normalisation actuelle (`SEARCH_NORM_VERSION`) */
+async function markSearchNormVersion(database: SearchDatabase): Promise<void> {
+  await database.execute(
+    `INSERT OR REPLACE INTO meta (key, value) VALUES ('search_norm', ?)`,
+    [SEARCH_NORM_VERSION]
+  );
+}
+
 /** Efface les notes, seulement si l'actualisation n'en a pas ajouté depuis `seq` */
 async function clearSearchNotes(database: SearchDatabase, seq: string | null): Promise<void> {
   await database.execute(
@@ -152,26 +186,24 @@ async function clearSearchNotes(database: SearchDatabase, seq: string | null): P
  * Reconstruction complète sans période vide : les nouvelles lignes sont ajoutées à côté des
  * anciennes, puis les anciennes sont retirées d'un seul coup (numéros de ligne ≤ au plus grand
  * d'avant). Entre les deux, une recherche peut trouver un titre deux fois : `searchContent`
- * n'en garde qu'un. Arrêtée en route, elle retire ce qu'elle a ajouté : l'index reste l'ancien.
+ * n'en garde qu'un.
+ *
+ * Arrêtée en route (vidéo qui démarre), elle s'arrête là sans rien effacer : retirer d'un coup
+ * jusqu'à des centaines de milliers de lignes tomberait pile au démarrage de la lecture. Les lignes
+ * déjà ajoutées sont des doublons (un seul résultat par titre) et la note reste en base : la
+ * reconstruction suivante les compte parmi les anciennes et les retire avec elles.
  */
 async function rebuildBesideOldRows(database: SearchDatabase, shouldStop: () => boolean): Promise<boolean> {
   const last = await database.select<{ rowid: number }[]>('SELECT rowid FROM search_index ORDER BY rowid DESC LIMIT 1');
   const maxOld = last[0]?.rowid ?? 0;
-  const undo = () => database.execute('DELETE FROM search_index WHERE rowid > ?', [maxOld]);
   for (const type of Object.keys(SEARCH_TABLES) as SearchContentType[]) {
-    if (shouldStop()) {
-      await undo();
-      return false;
-    }
+    if (shouldStop()) return false;
     const rows = await database.select<{ id: number; name: string }[]>(
       `SELECT id, name FROM ${SEARCH_TABLES[type]} WHERE name IS NOT NULL AND name != ''`
     );
-    const stopped = await insertSearchRows(database, type, rows, shouldStop);
-    if (stopped) {
-      await undo();
-      return false;
-    }
+    if (await insertSearchRows(database, type, rows, shouldStop)) return false;
   }
+  if (shouldStop()) return false;
   await database.execute('DELETE FROM search_index WHERE rowid <= ?', [maxOld]);
   return true;
 }
@@ -197,15 +229,17 @@ export async function applyPendingSearchChanges(
 ): Promise<'none' | 'delta' | 'rebuilt' | 'stopped'> {
   const database = await getDatabase();
   const notes = await database.select<{ key: string; value: string | null }[]>(
-    "SELECT key, value FROM meta WHERE key IN ('search_dirty', 'search_pending', 'search_seq')"
+    "SELECT key, value FROM meta WHERE key IN ('search_dirty', 'search_pending', 'search_seq', 'search_norm')"
   );
   const note = (key: string) => notes.find((n) => n.key === key)?.value ?? null;
-  if (note('search_dirty') !== '1') return 'none';
+  // Index fait avec une ancienne règle de normalisation (noms non latins effacés…) : refait en entier
+  const oldNorm = note('search_norm') !== SEARCH_NORM_VERSION;
+  if (note('search_dirty') !== '1' && !oldNorm) return 'none';
   const seq = note('search_seq');
 
   let pending: Partial<Record<SearchContentType, number[]>> | null = null;
   try {
-    const parsed: unknown = JSON.parse(note('search_pending') ?? 'null');
+    const parsed: unknown = oldNorm ? null : JSON.parse(note('search_pending') ?? 'null');
     if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
       pending = parsed as Partial<Record<SearchContentType, number[]>>;
     }
@@ -246,6 +280,7 @@ export async function applyPendingSearchChanges(
     outcome = 'rebuilt';
   }
 
+  if (oldNorm) await markSearchNormVersion(database);
   await clearSearchNotes(database, seq);
   return outcome;
 }
@@ -271,8 +306,12 @@ interface FTS5SearchResult {
  * - "spiderman" finds "Spider-Man"
  * - "cafe" finds "Café"
  *
+ * Une limite par type : une recherche courte qui trouve des centaines
+ * de chaînes ne prend plus toute la place des films et des séries. Résultats rangés films, séries,
+ * puis chaînes, chacun par pertinence.
+ *
  * @param query - Search query (min 2 characters)
- * @param limit - Max results (default 100)
+ * @param limit - Max results per type (default 100)
  * @returns Array of search results with id, name, and type
  */
 export async function searchContent(
@@ -295,16 +334,20 @@ export async function searchContent(
   const ftsQuery = words.map(w => `${w}*`).join(' ');
 
   try {
+    // Une seule passe : rang de pertinence calculé une fois, puis les `limit` premiers de chaque type
     const results = await database.select<{
       content_id: number;
       name: string;
-      content_type: 'movie' | 'series' | 'live';
+      content_type: SearchContentType;
     }[]>(
-      `SELECT content_id, name, content_type 
-       FROM search_index 
-       WHERE normalized_name MATCH ? 
-       ORDER BY rank
-       LIMIT ?`,
+      `SELECT content_id, name, content_type FROM (
+         SELECT content_id, name, content_type,
+                ROW_NUMBER() OVER (PARTITION BY content_type ORDER BY rank) AS type_rank
+         FROM search_index
+         WHERE normalized_name MATCH ?
+       )
+       WHERE type_rank <= ?
+       ORDER BY CASE content_type WHEN 'movie' THEN 0 WHEN 'series' THEN 1 ELSE 2 END, type_rank`,
       [ftsQuery, limit]
     );
 

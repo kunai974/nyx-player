@@ -83,8 +83,14 @@ export function whenEpgLinksReady(): Promise<boolean> {
  * continuait jusqu'au bout après la déconnexion. Sans effet si rien n'est en cours.
  */
 export async function cancelCatalogIngestion(): Promise<void> {
+  // Les deux sortes de lecture (Xtream, M3U) : un échec de l'une n'empêche pas l'autre
   try {
     await invoke('cancel_catalog_ingestion');
+  } catch (e) {
+    log.warn('cancel failed:', e);
+  }
+  try {
+    await invoke('cancel_m3u_ingestion');
   } catch (e) {
     log.warn('cancel failed:', e);
   }
@@ -114,6 +120,49 @@ export async function ingestCatalog(
   onProgress?: (event: IngestProgressEvent) => void,
   isStillCurrent: () => boolean = () => true,
 ): Promise<IngestResult> {
+  return runIngestion(
+    (dbName, dnsProvider) => invoke<IngestResult>('ingest_catalog', { host, username, password, dbName, dnsProvider }),
+    onProgress,
+    isStillCurrent,
+  );
+}
+
+/**
+ * Lit une liste M3U / M3U8 et l'écrit dans le catalogue local, comme une lecture Xtream (mêmes
+ * tables, même résultat, mêmes étapes après la lecture). Chaque entrée garde son adresse de
+ * lecture dans la base de l'appareil ; une liste vide ou illisible laisse le catalogue en place.
+ *
+ * @param url - Adresse de la liste (http ou https), jamais journalisée
+ */
+export async function ingestM3uCatalog(
+  url: string,
+  onProgress?: (event: IngestProgressEvent) => void,
+  isStillCurrent: () => boolean = () => true,
+): Promise<IngestResult> {
+  const dbName = getDatabaseFileName();
+  const result = await runIngestion(
+    (name, dnsProvider) => invoke<IngestResult>('ingest_m3u', { url, dbName: name, dnsProvider }),
+    onProgress,
+    isStillCurrent,
+  );
+  // Fiches TMDB des films et séries trouvées par le titre, par petits morceaux et sans attendre
+  // (seulement avec une clé TMDB personnelle : m3uTmdbLinks.ts). Arrêt si le compte change.
+  if (result.movies_count + result.series_count > 0) {
+    const sameAccount = () => isStillCurrent() && getDatabaseFileName() === dbName;
+    // Chargé à la demande : le relais TMDB et son client ne servent qu'ici, pas à chaque lecture Xtream
+    void import('./m3uTmdbLinks')
+      .then(({ linkM3uTitlesInBackground }) => linkM3uTitlesInBackground(sameAccount))
+      .catch((e: unknown) => log.warn('Title links failed:', e));
+  }
+  return result;
+}
+
+/** Lecture par le Rust (`read`, dans la base donnée), puis les étapes communes après la lecture. */
+async function runIngestion(
+  read: (dbName: string | null, dnsProvider: string) => Promise<IngestResult>,
+  onProgress: ((event: IngestProgressEvent) => void) | undefined,
+  isStillCurrent: () => boolean,
+): Promise<IngestResult> {
   // Écouter les events de progression si callback fourni
   let unlisten: UnlistenFn | null = null;
   if (onProgress) {
@@ -127,13 +176,7 @@ export async function ingestCatalog(
   // Base de ce compte, prise au départ : la lecture dure longtemps et le compte peut changer entre-temps
   const dbName = getDatabaseFileName();
   try {
-    const result = await invoke<IngestResult>('ingest_catalog', {
-      host,
-      username,
-      password,
-      dbName,
-      dnsProvider: getDnsProvider(),
-    });
+    const result = await read(dbName, getDnsProvider());
 
     // Déconnexion ou autre compte pendant la lecture : la base ouverte n'est plus celle du catalogue
     // lu, rien n'y est nettoyé ni relié

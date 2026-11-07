@@ -6,7 +6,8 @@ import DashboardHero from '../components/Dashboard/DashboardHero';
 import DashboardModeSwitch, { DashboardMode } from '../components/Dashboard/DashboardModeSwitch';
 import ContinueWatchingRow from '../components/Dashboard/ContinueWatchingRow';
 import LightIptvMode from '../components/Iptv/LightIptvMode';
-import { knownCategoryIds, rowCategoryOf } from '../components/Iptv/categoryRows';
+import { groupItemsByCategory, knownCategoryIds, rowCategoryOf } from '../components/Iptv/categoryRows';
+import { providerTmdbCount } from '../services/titleTmdbLinkStore';
 import RecycledRail from '../components/Iptv/rail/RecycledRail';
 import { isRailOn } from '../components/Iptv/rail/rail';
 import { buildContinueItems, type ContinueActions } from '../components/Dashboard/continueItems';
@@ -115,6 +116,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
     carouselPrefs,
     thisWeekMovies,
     thisWeekSeries,
+    linkingTitles,
   } = useDashboardData(lightIndexes);
 
   const { continueWatching } = useContinueWatching();
@@ -421,11 +423,11 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
       thisWeekSeries: t('carousel_new_series_this_week'),
     },
     carouselPrefs.disabledCarousels,
-    loadingHero,
+    loadingHero || linkingTitles,
   ) : []), [
     rail, trendingRowItems, continueRowItems, nowPlayingRowItems, onTheAirRowItems, watchlistRowItems, topRatedRowItems,
     popularRowItems, genreRowItems, thisWeekMovieRowItems, thisWeekSeriesRowItems, t, carouselPrefs.disabledCarousels,
-    loadingHero,
+    loadingHero, linkingTitles,
   ]);
   const railSuggestions = useSuggestionsRail(railRowList, t('add_to_watchlist' as 'loading', { ns: 'common' })); // Cast: key exists but types not regenerated
 
@@ -496,7 +498,7 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
           <div className="dashboard-content">
             {/* 1. Tendances */}
             {!carouselPrefs.disabledCarousels.includes('trending') && (
-              <VirtualDashboardRow gap={1.75} title={t('carousel_trending')} items={trendingRowItems} priority loading={loadingHero} />
+              <VirtualDashboardRow gap={1.75} title={t('carousel_trending')} items={trendingRowItems} priority loading={loadingHero || (linkingTitles && trendingRowItems.length === 0)} />
             )}
 
             {/* 2. Reprendre la lecture */}
@@ -515,12 +517,12 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
 
             {/* 3. Films Récents (TMDB Now Playing) */}
             {!carouselPrefs.disabledCarousels.includes('nowPlaying') && (
-              <VirtualDashboardRow gap={1.75} title={t('carousel_recent_movies')} items={nowPlayingRowItems} priority loading={loadingHero} />
+              <VirtualDashboardRow gap={1.75} title={t('carousel_recent_movies')} items={nowPlayingRowItems} priority loading={loadingHero || (linkingTitles && nowPlayingRowItems.length === 0)} />
             )}
 
             {/* 4. Séries Récentes (TMDB On The Air) */}
             {!carouselPrefs.disabledCarousels.includes('onTheAir') && (
-              <VirtualDashboardRow gap={1.75} title={t('carousel_recent_series')} items={onTheAirRowItems} priority loading={loadingHero} />
+              <VirtualDashboardRow gap={1.75} title={t('carousel_recent_series')} items={onTheAirRowItems} priority loading={loadingHero || (linkingTitles && onTheAirRowItems.length === 0)} />
             )}
 
             {/* 5. Ma Liste */}
@@ -534,12 +536,12 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
 
             {/* 6. Top Films (TMDB Top Rated) */}
             {!carouselPrefs.disabledCarousels.includes('topRated') && (
-              <VirtualDashboardRow gap={1.75} title={t('carousel_top_rated')} items={topRatedRowItems} loading={loadingHero} />
+              <VirtualDashboardRow gap={1.75} title={t('carousel_top_rated')} items={topRatedRowItems} loading={loadingHero || (linkingTitles && topRatedRowItems.length === 0)} />
             )}
 
             {/* 7. Films Populaires (lifetime popularity) */}
             {!carouselPrefs.disabledCarousels.includes('popular') && (
-              <VirtualDashboardRow gap={1.75} title={getCarouselLabel('popular')} items={popularRowItems} loading={loadingHero} />
+              <VirtualDashboardRow gap={1.75} title={getCarouselLabel('popular')} items={popularRowItems} loading={loadingHero || (linkingTitles && popularRowItems.length === 0)} />
             )}
 
             {/* 8. Genres dynamiques */}
@@ -585,30 +587,34 @@ const DashboardPage: React.FC<DashboardPageProps> = ({
               if (onOpenCategoryDetail && effectiveLightIndexes) {
                 const itemsMap = effectiveDashboardMode === 'films' ? effectiveLightIndexes.movies : effectiveLightIndexes.series;
                 const iconPrefixes = effectiveLightIndexes.iconPrefixes;
-                // Rangée « Autres » comprise : même rangement que les rangées de l'accueil
+                // Rangée « Autres » comprise : mêmes titres, dans le même ordre que la rangée de l'accueil
                 const known = knownCategoryIds(effectiveLightIndexes.categories, effectiveDashboardMode === 'films' ? 'movie' : 'series');
+                const byTmdb = effectiveDashboardMode === 'films' ? effectiveLightIndexes.moviesByTmdb : effectiveLightIndexes.seriesByTmdb;
+                const rowItems = groupItemsByCategory(
+                  [...itemsMap.values()].filter((item) => rowCategoryOf(item, known) === categoryId),
+                  providerTmdbCount(byTmdb) > 0,
+                  known,
+                ).get(categoryId) ?? [];
 
                 const items: Array<{ name: string; stream_id?: number; series_id?: number; tmdb: number; stream_icon?: string; cover?: string; category_id: string }> = [];
-                itemsMap.forEach((item) => {
-                  if (rowCategoryOf(item, known) === categoryId) {
-                    const iconUrl = getIconUrl(item, iconPrefixes);
-                    if (effectiveDashboardMode === 'films') {
-                      items.push({
-                        name: item.name,
-                        stream_id: item.id,
-                        tmdb: item.tmdbId,
-                        stream_icon: iconUrl,
-                        category_id: item.categoryId,
-                      });
-                    } else {
-                      items.push({
-                        name: item.name,
-                        series_id: item.id,
-                        tmdb: item.tmdbId,
-                        cover: iconUrl,
-                        category_id: item.categoryId,
-                      });
-                    }
+                rowItems.forEach((item) => {
+                  const iconUrl = getIconUrl(item, iconPrefixes);
+                  if (effectiveDashboardMode === 'films') {
+                    items.push({
+                      name: item.name,
+                      stream_id: item.id,
+                      tmdb: item.tmdbId,
+                      stream_icon: iconUrl,
+                      category_id: item.categoryId,
+                    });
+                  } else {
+                    items.push({
+                      name: item.name,
+                      series_id: item.id,
+                      tmdb: item.tmdbId,
+                      cover: iconUrl,
+                      category_id: item.categoryId,
+                    });
                   }
                 });
 

@@ -76,3 +76,11 @@ describe('playbackErrors', () => {
     expect(listener).toHaveBeenCalledWith({ kind: 'connection_limit', httpStatus: 458 });
   });
 });
+
+describe('code HTTP 460 (retour Sentry du 01/11, Android, 0.8.0)', () => {
+  it('est traité comme le 458 : limite de connexions, relance espacée permise', () => {
+    expect(classifyHttpStatus(460)).toBe('connection_limit');
+    expect(classifyNativeError('MPV_LOAD_FAILED', 460)).toBe('connection_limit');
+    expect(isAutoRetryable(classifyHttpStatus(460))).toBe(true);
+  });
+});

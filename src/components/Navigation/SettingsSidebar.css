@@ -104,10 +104,12 @@
     position: relative;
 }
 
-.settings-nav-item:hover {
-    background: rgba(255, 255, 255, 0.08);
-    color: rgba(255, 255, 255, 0.95);
-    transform: translateX(4px);
+@media (hover: hover) {
+  .settings-nav-item:hover {
+      background: rgba(255, 255, 255, 0.08);
+      color: rgba(255, 255, 255, 0.95);
+      transform: translateX(4px);
+  }
 }
 
 /* Active State */
@@ -127,6 +129,7 @@
     left: 0;
     top: 50%;
     transform: translateY(-50%);
+    /* stylelint-disable-next-line defensive-css/no-fixed-sizes -- liseré de 3 px : trait fin voulu */
     width: 3px;
     height: 60%;
     background: #e50914;
@@ -149,7 +152,9 @@
 
 /* ================= BADGE (IPTV STATUS) ================= */
 .settings-nav-item__badge {
+    /* stylelint-disable-next-line defensive-css/no-fixed-sizes -- pastille ronde de 8 px */
     width: 8px;
+    /* stylelint-disable-next-line defensive-css/no-fixed-sizes -- pastille ronde de 8 px */
     height: 8px;
     border-radius: 50%;
     flex-shrink: 0;

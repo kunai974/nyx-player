@@ -113,7 +113,7 @@ export function getPinnedCategories(): Set<string> {
 // ============================================================================
 
 /**
- * Toggle un favori TV. Retourne true si ajouté, false si retiré.
+ * Toggle un favori TV. Retourne true si ajouté, false si retiré (l'état réel si l'écriture échoue).
  */
 export async function toggleFavorite(streamId: number): Promise<boolean> {
   const wasPresent = favoriteIds.has(streamId);
@@ -143,19 +143,21 @@ export async function toggleFavorite(streamId: number): Promise<boolean> {
     }
   } catch (error) {
     log.error(`Failed to toggle favorite ${streamId}:`, error);
-    // Rollback cache
+    // Rollback cache, puis l'affichage revient en arrière lui aussi
     if (wasPresent) {
       favoriteIds.add(streamId);
     } else {
       favoriteIds.delete(streamId);
     }
+    window.dispatchEvent(new CustomEvent(LIVE_TV_BOOKMARKS_EVENT, { detail: { type: 'favorite', streamId } }));
+    return wasPresent; // état réel : rien n'a changé
   }
 
   return !wasPresent; // true = ajouté, false = retiré
 }
 
 /**
- * Toggle une catégorie épinglée. Retourne true si ajoutée, false si retirée.
+ * Toggle une catégorie épinglée. Retourne true si ajoutée, false si retirée (l'état réel si l'écriture échoue).
  */
 export async function togglePinnedCategory(categoryId: string): Promise<boolean> {
   const wasPresent = pinnedCategoryIds.has(categoryId);
@@ -185,12 +187,14 @@ export async function togglePinnedCategory(categoryId: string): Promise<boolean>
     }
   } catch (error) {
     log.error(`Failed to toggle pinned category ${categoryId}:`, error);
-    // Rollback cache
+    // Rollback cache, puis l'affichage revient en arrière lui aussi
     if (wasPresent) {
       pinnedCategoryIds.add(categoryId);
     } else {
       pinnedCategoryIds.delete(categoryId);
     }
+    window.dispatchEvent(new CustomEvent(LIVE_TV_BOOKMARKS_EVENT, { detail: { type: 'pinned', categoryId } }));
+    return wasPresent; // état réel : rien n'a changé
   }
 
   return !wasPresent;

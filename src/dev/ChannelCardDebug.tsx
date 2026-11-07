@@ -7,13 +7,7 @@
 
 import React, { useEffect, useRef, useState } from 'react';
 
-export interface ChannelCardDebugInfo {
-    name: string;
-    m3uId: string | undefined;
-    matchedEpgId: string | undefined | null;
-    matchMethod: string | undefined | null;
-    epgName: string | undefined;
-}
+import type { ChannelCardDebugInfo } from '../services/outilsTest';
 
 const ChannelCardDebug: React.FC<{ debugInfo: ChannelCardDebugInfo }> = ({ debugInfo }) => {
     const [isPinned, setIsPinned] = useState(false);

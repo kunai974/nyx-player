@@ -23,6 +23,7 @@
 import { getDatabase } from './dbCore';
 import { pushPlaybackUpsertToCloud, pushPlaybackDeleteToCloud } from './syncService';
 import { readBaseline } from './sync/syncBaseline';
+import { providerSyncScope, localKey } from './sync/providerSync';
 import { getCurrentSyncUserId } from './sync/syncState';
 import { serverNow } from './sync/serverClock';
 import { PLAYBACK_EVENT } from './eventConstants';
@@ -197,6 +198,7 @@ export async function clearProgress(streamId: number | string): Promise<void> {
     pushPlaybackDeleteToCloud(numId);
   } catch (error) {
     log.error('clearProgress error:', error);
+    throw error; // l'écran ne doit pas annoncer une réussite
   }
 }
 
@@ -240,6 +242,7 @@ export async function clearMultipleProgress(streamIds: (number | string)[]): Pro
     }
   } catch (error) {
     log.error('clearMultipleProgress error:', error);
+    throw error;
   }
 }
 
@@ -333,7 +336,7 @@ export async function clearProgressByType(contentType: 'movie' | 'episode'): Pro
     return count;
   } catch (error) {
     log.error('clearProgressByType error:', error);
-    return 0;
+    throw error; // distinct de « rien à effacer » (0)
   }
 }
 
@@ -551,8 +554,12 @@ export async function finalizePlayback(params: FinalizePlaybackParams): Promise<
         // Exception : une synchro passée pendant la lecture a envoyé une position intermédiaire,
         // plus récente (dernier accord) ; la reprise d'avant est alors redatée et renvoyée, sinon
         // cette position l'emporterait à la synchro suivante.
+        // Dernier accord des tables du cloud en service (par fournisseur ou non, sync/providerSync.ts)
         const userId = getCurrentSyncUserId();
-        const known = userId ? (await readBaseline(userId, 'playback')).get(String(params.streamId)) : undefined;
+        const scope = providerSyncScope('playback');
+        const known = userId && scope
+          ? (await readBaseline(userId, scope.baselineScope)).get(localKey(scope, String(params.streamId)))
+          : undefined;
         const overtaken = known !== undefined && known > previous.updated_at;
         const updatedAt = overtaken ? now : previous.updated_at;
         await db.execute(

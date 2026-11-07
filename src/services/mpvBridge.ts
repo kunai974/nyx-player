@@ -19,10 +19,11 @@ import {
 import { invoke } from '@tauri-apps/api/core';
 import { isHardwareAccelerationEnabled } from './appSettingsService';
 import { createLogger } from '../utils/logger';
+import { describeStreamForLog } from '../utils/sanitizeUrl';
 import { isAndroid } from '../utils/platform';
 import { classifyHttpStatus, emitPlaybackError } from './player/playbackErrors';
 import { scheduleForcedUnpause, cancelForcedUnpause } from './player/forcedUnpause';
-import { estLectureRefusee } from '../dev/bancAdresses';
+import { prises } from './outilsTest';
 
 const log = createLogger('MPV');
 
@@ -66,7 +67,7 @@ const watchDesktopLoadErrors = () => {
     // vérification de mpv (autorité absente du magasin de Windows, chaîne incomplète), à repérer
     // dans les journaux
     if (/^https:/i.test(url) && httpStatus !== undefined && httpStatus < 400) {
-      log.warn(`HTTPS stream reachable (${httpStatus}) but not opened by mpv: certificate rejected? ${url}`);
+      log.warn(`HTTPS stream reachable (${httpStatus}) but not opened by mpv: certificate rejected? ${describeStreamForLog(url)}`);
     }
     emitPlaybackError({ kind: classifyHttpStatus(httpStatus), httpStatus, engine: 'mpv' });
   }).catch((e) => {
@@ -335,7 +336,7 @@ const loadStream = async (
     await applyStartPosition(startPosition);
     if (sequence !== loadSequence) return false;
 
-    log.info(label, url);
+    log.info(label, describeStreamForLog(url));
     lastStreamUrl = url;
     streamLoaded = true;
     try {
@@ -343,7 +344,7 @@ const loadStream = async (
     } catch (e) {
       // Version du banc : lecture refusée par le verrou du banc (mpvApi). Rien à sonder : la sonde
       // Rust enverrait sinon une vraie requête vers l'adresse refusée au prochain « end-file ».
-      if (import.meta.env.VITE_BANC === '1' && estLectureRefusee(e)) lastStreamUrl = null;
+      if (import.meta.env.VITE_BANC === '1' && prises.bancLecteur?.estLectureRefusee(e)) lastStreamUrl = null;
       if (attempt > 0 || !isEngineGone(e)) throw e;
       forgetDeadEngine(e);
       await initMpv();

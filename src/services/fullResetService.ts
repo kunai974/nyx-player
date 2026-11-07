@@ -13,6 +13,7 @@
  *    chaque ouverture (dbCore.ts, CREATE TABLE IF NOT EXISTS).
  */
 
+import { resetPersonalTmdbKeyCache } from './tmdbPersonalKey';
 import { invoke } from '@tauri-apps/api/core';
 import { restartApp } from './appRestart';
 import { StorageService } from './storage';
@@ -26,6 +27,7 @@ import { purgeDurableAuthSession } from './authStorage';
 import { SUPABASE_STORAGE_KEY } from './supabaseClient';
 import { devLog } from '../utils/devLog';
 import { ACCOUNT_DELETED_NOTICE_KEY, ACCOUNT_DELETION_PENDING_KEY, clearAccountDeletionPending } from './accountDeletion';
+import { getOpenLocalSpace, GUEST_SPACE_STORAGE_KEY } from './localSpace';
 import { createLogger } from '../utils/logger';
 
 const log = createLogger('FullReset');
@@ -66,7 +68,7 @@ export async function performFullReset(options?: { purgeCloud?: boolean; deleteA
       if (syncUserId) startCloudResync(syncUserId);
       throw new CloudPurgeError(failedTables);
     }
-    devLog('session', '[0/6] Cloud data purged (5 tables)');
+    devLog('session', '[0/6] Cloud data purged');
   }
 
   // 1. Clear OS Keychain
@@ -89,7 +91,11 @@ export async function performFullReset(options?: { purgeCloud?: boolean; deleteA
   // Suppression du compte : sa marque reste jusqu'à l'effacement de la base (étape 5), pour qu'une
   // app fermée pendant le nettoyage le reprenne au lancement suivant (accountDeletion.ts)
   // (de même que le message d'un compte supprimé depuis un autre appareil, pour l'écran de connexion)
-  const keptKeys = options?.deleteAccount ? [ACCOUNT_DELETION_PENDING_KEY, ACCOUNT_DELETED_NOTICE_KEY] : [];
+  const keptKeys: string[] = options?.deleteAccount ? [ACCOUNT_DELETION_PENDING_KEY, ACCOUNT_DELETED_NOTICE_KEY] : [];
+  // L'espace invité est à part de celui d'un compte : effacer les données d'un compte n'oublie pas
+  // l'identifiant de l'espace invité (sa base resterait sur l'appareil, sans plus personne pour la
+  // retrouver). Depuis l'espace invité lui-même, tout part avec lui (base, coffre, identifiant).
+  if (getOpenLocalSpace()?.kind !== 'guest') keptKeys.push(GUEST_SPACE_STORAGE_KEY);
   const kept = keptKeys.map((key) => [key, localStorage.getItem(key)] as const);
   localStorage.clear();
   for (const [key, value] of kept) if (value !== null) localStorage.setItem(key, value);
@@ -126,6 +132,7 @@ export async function performFullReset(options?: { purgeCloud?: boolean; deleteA
   // rouvrir le fichier, qui ne se supprimerait plus sous Windows
   const dbFileName = getDatabaseFileName();
   resetDatabaseName();
+  resetPersonalTmdbKeyCache(); // une base recréée au même nom n'a plus la clé de l'ancienne
   await closeDatabaseConnection();
   devLog('session', '[4/6] SQLite connection closed + singleton reset');
 

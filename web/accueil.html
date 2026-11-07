@@ -307,7 +307,7 @@
           </div>
           <div class="card__text">
             <h3>Votre vie privée d'abord</h3>
-            <p>Vos identifiants IPTV ne quittent jamais votre appareil. Pas de publicité, aucune revente de données.</p>
+            <p>Vos identifiants IPTV restent chiffrés sur votre appareil&nbsp;: nous ne pouvons pas les lire. Pas de publicité, aucune revente de données.</p>
           </div>
         </article>
 
@@ -443,7 +443,8 @@
         <div class="qa" data-reveal>
           <h3><button class="qa__q" aria-expanded="false"><span>Mes données sont-elles collectées ou partagées&nbsp;?</span><i aria-hidden="true"></i></button></h3>
           <div class="qa__a"><div><p>Vos identifiants IPTV sont chiffrés sur votre appareil et ne sont jamais envoyés à nos
-            serveurs. Votre compte Nyx synchronise votre liste, votre progression de lecture, vos favoris et vos
+            serveurs, sauf chiffrés pour votre seule TV si vous la connectez avec votre téléphone&nbsp;: nous ne
+            pouvons pas les lire. Votre compte Nyx synchronise votre liste, votre progression de lecture, vos favoris et vos
             préférences entre vos appareils. Ces données sont privées, protégées, et ne sont jamais vendues ni
             utilisées à des fins publicitaires. Tous les détails sont dans notre
             <a href="confidentialite.html">politique de confidentialité</a>.</p></div></div>
@@ -509,9 +510,11 @@
       <div class="trust__grid">
         <article class="trust__card" data-reveal><h3>Windows affiche «&nbsp;éditeur inconnu&nbsp;»&nbsp;?</h3><p>C&rsquo;est normal pour une application indépendante et récente&nbsp;: Nyx n&rsquo;est pas encore signée avec un certificat Windows payant. Dans la fenêtre bleue SmartScreen, cliquez sur <strong>Informations complémentaires</strong>, puis <strong>Exécuter quand même</strong>. Vous pouvez vérifier ce que vous lancez&nbsp;: tout le code source est public.</p></article>
         <article class="trust__card" data-reveal><h3>Installer sur Android et Android TV</h3><p>Ouvrez l&rsquo;APK téléchargé. Si on vous le demande, autorisez les installations depuis votre navigateur ou votre gestionnaire de fichiers («&nbsp;sources inconnues&nbsp;») — vous pourrez le désactiver ensuite.</p></article>
+        <article class="trust__card" data-reveal><h3>Installer sur une TV avec Downloader</h3><p>Sur Android TV, ouvrez l&rsquo;application gratuite <strong>Downloader</strong>, tapez le code <strong>2679899</strong> (ou l&rsquo;adresse <strong>nyxplayer.app/tv-apk</strong>) puis validez&nbsp;: l&rsquo;APK de Nyx se télécharge, puis choisissez <strong>Installer</strong>. (Testé sur Android TV&nbsp;; Fire TV pas encore confirmé.)</p></article>
+        <article class="trust__card" data-reveal><h3>Connecter la TV avec votre téléphone</h3><p>Sur la TV, choisissez <strong>Avec mon téléphone</strong> et scannez le QR code&nbsp;: vous tapez votre compte et votre fournisseur sur le téléphone, pas à la télécommande. Vos saisies sont chiffrées sur le téléphone, pour cette TV seule&nbsp;: elles passent par un serveur sous une forme qu&rsquo;il ne peut pas lire, et n&rsquo;y sont pas enregistrées. Le code ne sert qu&rsquo;une fois et expire au bout de 10&nbsp;minutes. La télécommande reste possible. <a href="https://github.com/kunai974/nyx-player/tree/main/web/tv">Le code de cette page est public.</a></p></article>
         <article class="trust__card" data-reveal><h3>Vérifier votre téléchargement</h3><p>Chaque version publiée sur GitHub contient <code>SHA256SUMS.txt</code>, l&rsquo;empreinte SHA-256 de chaque fichier. Comparez-la avec votre téléchargement. Chaque fichier a aussi un certificat de fabrication&nbsp;: vérifiez-le avec <code>gh attestation verify &lt;fichier&gt; --repo kunai974/nyx-player</code>.</p>
           <a class="trust__link" href="https://github.com/kunai974/nyx-player/releases" target="_blank" rel="noopener">Voir les versions &rarr;</a></article>
-        <article class="trust__card" data-reveal><h3>Vos données restent à vous</h3><p>Vos identifiants IPTV sont chiffrés sur votre appareil et ne nous sont jamais envoyés. Aucune publicité, rien n&rsquo;est revendu.</p>
+        <article class="trust__card" data-reveal><h3>Vos données restent à vous</h3><p>Vos identifiants IPTV sont chiffrés sur votre appareil et nous ne pouvons jamais les lire. Aucune publicité, rien n&rsquo;est revendu.</p>
           <a class="trust__link" href="confidentialite.html">Politique de confidentialité &rarr;</a></article>
       </div>
     </section>

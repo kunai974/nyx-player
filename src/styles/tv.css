@@ -62,11 +62,12 @@
 }
 
 /* Boutons ronds dont le style de bureau retire le contour avec !important (icônes de la barre
-   latérale, retour et remise à zéro des fiches) : sans ça, le focus y était invisible et la barre
+   latérale, remise à zéro des fiches ; le bouton retour n'en a plus besoin mais garde cette règle) : sans ça, le focus y était invisible et la barre
    semblait inatteignable. Le liseré suit leur forme ronde. */
 :root.nyx-tv:not(.nyx-pointer) .nav-item:focus,
 :root.nyx-tv:not(.nyx-pointer) .back-button:focus,
 :root.nyx-tv:not(.nyx-pointer) .reset-progress-btn:focus {
+  /* stylelint-disable-next-line declaration-no-important -- contre-règle du outline: none !important de bureau (icônes de la barre latérale, retour, remise à zéro) : seul un !important bat un !important */
   outline: var(--focus-ring-width) solid var(--focus-ring-color) !important;
   color: var(--text-primary);
 }
@@ -812,6 +813,14 @@
   max-width: calc(16rem + var(--tv-safe-x));
 }
 
+/* Pas de flou d'arrière-plan sur le panneau de zapping TV : mesuré sur Chromecast, images en retard
+   82 % avec le flou, 38 % sans ; délai touche → écran 691 ms contre 473 ms. Quatre classes (0,4,0) pour
+   l'emporter sur `.channel-switcher .channel-switcher__sidebar .tv-categories-sidebar` (0,3,0). */
+.nyx-tv .channel-switcher .channel-switcher__sidebar .tv-categories-sidebar {
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
 .nyx-tv .channel-switcher__sidebar .tv-categories-sidebar__header {
   padding-top: var(--tv-safe-y);
   padding-left: calc(var(--tv-safe-x) + var(--space-5));
@@ -919,4 +928,26 @@
   /* Cartes de chaînes et guide hors de la bande rognée à droite. La grille garde déjà 32 px à droite
      (RIGHT_PADDING, ChannelGrid.tsx) : la page ajoute le reste de la zone sûre. */
   padding-right: calc(var(--tv-safe-x) - 32px);
+}
+
+/* Connexion par QR code : le QR code à droite du formulaire du fournisseur, toujours visible (un gros
+   bouton en tête de la carte la faisait dépasser de la toile en haut et en bas) */
+.nyx-tv .login-phone-side {
+  flex: 0 0 auto;
+  width: 17rem;
+  margin-left: var(--space-7);
+}
+
+/* Carte du fournisseur toujours dans la toile, bandeau d'erreur compris : elle défile au lieu de
+   dépasser en haut et en bas (onglet « Lien M3U » et sa note, plus le bandeau, passaient 720) */
+.nyx-tv .login-wrapper > .login-container {
+  flex: 1 1 0;
+  min-height: 0;
+  height: auto;
+}
+
+.nyx-tv .login-box {
+  max-height: calc(100% - 2 * var(--space-4));
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }

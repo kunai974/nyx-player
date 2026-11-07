@@ -8,6 +8,7 @@ import {
 import type { XtreamMovie } from '../types/xtream';
 import type { IptvStream } from '../types/iptv';
 import { normalizeTmdbId } from '../utils/normalizeTmdb';
+import { findTitleTmdbId } from '../services/titleTmdbLookup';
 import { getTmdbLanguage } from '../utils/tmdbLanguage';
 import type { TmdbMovieDetails } from '../types/tmdb';
 import { TMDB_LANGUAGE_EVENT } from '../services/eventConstants';
@@ -21,8 +22,8 @@ const MIN_LOADING_DISPLAY_MS = 600;
 /**
  * Hook for fetching TMDB movie details
  * 
- * PHASE C3: Title matching REMOVED - only uses TMDB ID provided by provider
- * If tmdb_id = 0 → fallback direct to Xtream data (lightIndex)
+ * TMDB ID from the provider; without it, a movie from an M3U list is looked up by its title (safe
+ * link or none). Otherwise (tmdb_id = 0) → fallback direct to provider data (lightIndex)
  * 
  * @param baseItem - IptvStream or XtreamMovie with stream data
  * @param initialTmdbId - Optional TMDB ID if already known
@@ -35,18 +36,33 @@ export const useTmdbMovie = (baseItem: IptvStream | XtreamMovie | null, initialT
   // Ref to clear the transition timer on unmount (prevents memory leak)
   const transitionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Resolve TMDB ID from prop or baseItem (NO title matching - only provider ID)
-  const resolvedTmdbId = (() => {
+  // Numéro TMDB donné par la page ou le fournisseur
+  const providerTmdbId = (() => {
     if (initialTmdbId && initialTmdbId > 0) return initialTmdbId;
     if (!baseItem) return 0;
-    // Only use tmdb field from provider, no search fallback
     return normalizeTmdbId((baseItem as XtreamMovie).tmdb);
   })();
+  // Sans lui, un film de liste M3U est cherché par son titre (lien sûr ou rien, m3uTmdbLinks.ts) ;
+  // un film Xtream sans numéro garde la fiche du fournisseur, comme avant
+  const streamId = baseItem && 'stream_id' in baseItem ? Number(baseItem.stream_id) : 0;
+  const [titleLink, setTitleLink] = useState<{ streamId: number; tmdbId: number } | null>(null);
+  const linkedTmdbId = titleLink && titleLink.streamId === streamId ? titleLink.tmdbId : 0;
+  const resolvedTmdbId = providerTmdbId || linkedTmdbId;
+
+  useEffect(() => {
+    if (providerTmdbId > 0 || streamId <= 0) return;
+    let mounted = true;
+    void findTitleTmdbId('movie', streamId).then((found) => {
+      if (mounted && found > 0) setTitleLink({ streamId, tmdbId: found });
+    });
+    return () => { mounted = false; };
+  }, [providerTmdbId, streamId]);
 
   // Initialize details to null - SQLite cache is async, will be loaded in effect
   const [details, setDetails] = useState<TmdbMovieDetails | null>(null);
 
-  // Loading state: if no tmdb_id → fallback immediately, else loading
+  // Loading state: if no tmdb_id → fallback immediately (a title link found later switches to the
+  // TMDB card through the fetch effect below), else loading
   const [loadingState, setLoadingState] = useState<'loading' | 'ready' | 'fallback'>(() => {
     if (resolvedTmdbId === 0) return 'fallback';
     return 'loading';

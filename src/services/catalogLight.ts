@@ -19,8 +19,9 @@ import {
   type LightCatalog,
 } from '../utils/lightIndexBuilder';
 import type { LightIndexes } from '../types/lightIndex';
+import { applyStoredTitleLinks, rememberCurrentCatalog } from './titleTmdbLinkStore';
 import { perfMark } from '../utils/perfMarks';
-import { PERF_ENABLED } from '../dev/perfHook';
+import { VERSION_MESURE as PERF_ENABLED } from './outilsTest';
 import { createLogger } from '../utils/logger';
 
 const log = createLogger('CatalogLight');
@@ -34,7 +35,9 @@ export async function buildIndexesRowByRow(): Promise<LightIndexes> {
     getAllLive(),
     getAllCategories(),
   ]);
-  return buildLightIndexesFromSQLite(movies, series, live, categories);
+  const indexes = buildLightIndexesFromSQLite(movies, series, live, categories);
+  await applyStoredTitleLinks(indexes);
+  return indexes;
 }
 
 async function loadLightCatalog(): Promise<LightCatalog> {
@@ -43,13 +46,21 @@ async function loadLightCatalog(): Promise<LightCatalog> {
   return invoke<LightCatalog>('load_light_catalog', { dbName });
 }
 
-/** Catalogue en mémoire (LightIndexes) : lecture compacte, ancienne lecture en secours. */
-export async function loadLightIndexes(): Promise<LightIndexes> {
+/**
+ * Catalogue en mémoire (LightIndexes) : lecture compacte, ancienne lecture en secours.
+ * `remember: false` : catalogue préparé en coulisse, retenu seulement une fois installé à l'écran
+ * (applyRefreshedCatalog), une préparation pouvant être abandonnée.
+ */
+export async function loadLightIndexes(options: { remember?: boolean } = {}): Promise<LightIndexes> {
+  const remember = options.remember !== false;
   perfMark('catalog-read-start');
   try {
     const catalog = await loadLightCatalog();
     perfMark('catalog-read-end');
     const indexes = buildLightIndexesFromCatalog(catalog);
+    // Fiches TMDB trouvées par le titre (fournisseur sans numéro TMDB), gardées à part
+    await applyStoredTitleLinks(indexes);
+    if (remember) rememberCurrentCatalog(indexes);
     perfMark('catalog-indexed');
     if (PERF_ENABLED) scheduleIdentityCheck(indexes);
     return indexes;
@@ -57,6 +68,7 @@ export async function loadLightIndexes(): Promise<LightIndexes> {
     catalogLog.warn('Lecture compacte indisponible, lecture ligne à ligne :', e);
   }
   const indexes = await buildIndexesRowByRow();
+  if (remember) rememberCurrentCatalog(indexes);
   perfMark('catalog-read-end');
   perfMark('catalog-indexed');
   return indexes;

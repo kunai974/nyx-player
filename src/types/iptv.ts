@@ -4,6 +4,12 @@ export interface XtreamCredentials {
   host: string;
   username: string;
   password: string;
+  /**
+   * Source de la session qui est une liste M3U (pas un abonnement Xtream) : adresse complète de la
+   * liste, jamais journalisée. `host` vaut alors « m3u: » + hôte, et les identifiants sont vides
+   * (services/sources/m3uListCredentials.ts).
+   */
+  m3u?: { url: string; epgUrl?: string };
 }
 
 export interface IptvCategory {

@@ -5,7 +5,7 @@
  * gère l'erreur réseau et le renommage. Le comportement est celui qu'avait App.tsx.
  */
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { loadProfiles, needsActiveProfileUpdate, setActiveProfile as setActiveProfileSupabase } from '../services/profileService';
 import type { UserProfile } from '../services/profileService';
 import { createLogger } from '../utils/logger';
@@ -22,6 +22,10 @@ interface UseProfilesParams {
   /** Sélection du profil côté session (SessionContext) */
   selectSessionProfile: (profileId: string) => Promise<void>;
   resumeSession: () => Promise<void>;
+  /** Sans compte (espace invité) : pas de profils, l'écran « Qui regarde ? » est sauté */
+  guest?: boolean;
+  /** Lecture de la session sauvegardée en cours : la reprise d'un invité attend sa fin */
+  isCheckingSavedSession?: boolean;
 }
 
 export function useProfiles({
@@ -30,6 +34,8 @@ export function useProfiles({
   hasSavedSession,
   selectSessionProfile,
   resumeSession,
+  guest = false,
+  isCheckingSavedSession = false,
 }: UseProfilesParams) {
   const [profiles, setProfiles] = useState<UserProfile[]>([]);
   const [profilesLoading, setProfilesLoading] = useState(false);
@@ -37,6 +43,11 @@ export function useProfiles({
   const [profileSelected, setProfileSelected] = useState(false);
   const [activeProfileId, setActiveProfileId] = useState<string | null>(null);
   const [profilesInitialized, setProfilesInitialized] = useState(false);
+  // Compte courant : une réponse lente du compte précédent ne doit pas s'afficher chez le suivant.
+  const currentUserIdRef = useRef(userId);
+  useEffect(() => {
+    currentUserIdRef.current = userId;
+  }, [userId]);
 
   // Dérivation du profil actif
   const activeProfile = activeProfileId ? profiles.find(p => p.id === activeProfileId) : undefined;
@@ -51,13 +62,17 @@ export function useProfiles({
     try {
       // Sans réseau : profils gardés sur l'appareil, l'app s'ouvre sur ses données locales
       const { profiles: result } = await loadProfiles(userId);
+      if (currentUserIdRef.current !== userId) return;
       setProfiles(result);
     } catch (err) {
+      if (currentUserIdRef.current !== userId) return;
       log.error('Failed to fetch profiles:', err);
       setProfilesError((err as Error).message);
     } finally {
-      setProfilesLoading(false);
-      setProfilesInitialized(true);
+      if (currentUserIdRef.current === userId) {
+        setProfilesLoading(false);
+        setProfilesInitialized(true);
+      }
     }
   }, [userId]);
 
@@ -67,6 +82,20 @@ export function useProfiles({
       void fetchProfiles();
     }
   }, [userId, isLoggedIn, fetchProfiles]);
+
+  // =========================================================================
+  // INVITÉ — aucun profil à choisir : l'app s'ouvre sur le fournisseur de l'appareil
+  // =========================================================================
+  const guestOpenedRef = useRef(false);
+  useEffect(() => {
+    if (!guest) {
+      guestOpenedRef.current = false;
+      return;
+    }
+    if (guestOpenedRef.current || isCheckingSavedSession || isLoggedIn) return;
+    guestOpenedRef.current = true;
+    if (hasSavedSession) void resumeSession();
+  }, [guest, isCheckingSavedSession, isLoggedIn, hasSavedSession, resumeSession]);
 
   // =========================================================================
   // PROFILE ACTIONS
@@ -106,6 +135,7 @@ export function useProfiles({
     setProfileSelected(false);
     setProfiles([]);
     setProfilesError(null);
+    setProfilesLoading(false);
     setProfilesInitialized(false);
   }, []);
 
@@ -113,8 +143,9 @@ export function useProfiles({
     profiles,
     profilesLoading,
     profilesError,
-    profilesInitialized,
-    profileSelected,
+    profilesInitialized: guest || profilesInitialized,
+    // Invité : le « choix » du profil est fait dès que la session sauvegardée est lue
+    profileSelected: guest ? !isCheckingSavedSession : profileSelected,
     setProfileSelected,
     activeProfileId,
     activeProfile,

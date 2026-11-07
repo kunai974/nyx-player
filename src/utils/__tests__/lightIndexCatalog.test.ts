@@ -92,6 +92,8 @@ const live = [
 const categories: CategoryRow[] = [
   { id: '1', name: 'Films', type: 'movie', sort_order: 0 },
   { id: '3', name: 'Chaînes', type: 'live', sort_order: 1 },
+  // Même numéro qu'une catégorie de films (fournisseur qui numérote chaque type à part)
+  { id: '1', name: 'Chaînes 1', type: 'live', sort_order: 2 },
 ];
 
 describe('buildLightIndexesFromCatalog — identique à la lecture ligne à ligne', () => {
@@ -110,6 +112,10 @@ describe('buildLightIndexesFromCatalog — identique à la lecture ligne à lign
     expect([...after.categories.entries()]).toEqual([...before.categories.entries()]);
     expect([...after.moviesByTmdb.keys()]).toEqual([...before.moviesByTmdb.keys()]);
     expect([...after.seriesByTmdb.keys()]).toEqual([...before.seriesByTmdb.keys()]);
+  });
+
+  it('numéro partagé entre films et chaînes : les deux catégories restent', () => {
+    expect([...after.categories.values()].map((c) => `${c.type} ${c.name}`)).toEqual(['movie Films', 'live Chaînes', 'live Chaînes 1']);
   });
 
   it('le compteur de différences voit un écart', () => {

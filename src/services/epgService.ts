@@ -19,7 +19,7 @@ import { getNetworkStatus } from './networkStatus';
 import { EPG_UPDATED_EVENT } from './eventConstants';
 import { devLog } from '../utils/devLog';
 import { StorageService } from './storage';
-import { adresseGuideBanc } from '../dev/bancAdresses';
+import { prises } from './outilsTest';
 
 // ============================================================================
 // CONSTANTS
@@ -43,8 +43,8 @@ export const AUTO_SYNC_PAUSE_MS = 24 * 3600 * 1000;
  * à la compilation.
  */
 export async function epgSourceUrl(): Promise<string> {
-  if (import.meta.env.VITE_BANC === '1') {
-    const guide = adresseGuideBanc(await StorageService.getCredentials().catch(() => null));
+  if (import.meta.env.VITE_BANC === '1' && prises.guideBanc) {
+    const guide = prises.guideBanc(await StorageService.getCredentials().catch(() => null));
     if (guide) return guide;
   }
   return EPG_URL;

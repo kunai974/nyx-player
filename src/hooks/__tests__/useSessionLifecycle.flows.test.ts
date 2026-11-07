@@ -41,6 +41,7 @@ vi.mock('../../services/xtreamApi', () => ({
 }));
 vi.mock('../../services/catalogIngestion', () => ({
   ingestCatalog: vi.fn(async () => ({ movies_count: 0, series_count: 0, live_count: 0, categories_count: 0, partial: false, failed_endpoints: [] })),
+  ingestM3uCatalog: vi.fn(async () => ({ movies_count: 0, series_count: 0, live_count: 0, categories_count: 0, partial: false, failed_endpoints: [] })),
   cancelCatalogIngestion: vi.fn(async () => {}),
   // Liens du guide recalculés : testé dans useSessionLifecycle.catalog.test.ts
   whenEpgLinksReady: vi.fn(async () => false),
@@ -145,7 +146,7 @@ import { useSessionLifecycle } from '../useSessionLifecycle';
 import type { SessionSetters } from '../useSessionLifecycle';
 import { clearCatalogData, getMeta, setMeta, getDatabase, isDatabaseOf } from '../../services/dbCore';
 import { StorageService } from '../../services/storage';
-import { ingestCatalog, cancelCatalogIngestion } from '../../services/catalogIngestion';
+import { ingestCatalog, ingestM3uCatalog, cancelCatalogIngestion } from '../../services/catalogIngestion';
 import { loadLightIndexes } from '../../services/catalogLight';
 import { syncOnLogin, fetchCloudProviderHash, setCurrentSyncUserId, purgeProviderCloudData } from '../../services/syncService';
 import { relinkWatchlistStreamIds } from '../../services/watchlistRelinking';
@@ -648,6 +649,46 @@ describe('useSessionLifecycle — identifiants modifiés dans les Réglages', ()
     expect(setters.setPendingProviderChange).toHaveBeenCalledWith(null);
     expect(clearCatalogData).not.toHaveBeenCalled();
     expect(ingestCatalog).not.toHaveBeenCalled();
+  });
+});
+
+describe('useSessionLifecycle — liste M3U comme source', () => {
+  const listUrl = 'http://liste.invalid/output/m3u?token=jeton-factice';
+  const list = { host: 'm3u:liste.invalid', username: '', password: '', m3u: { url: listUrl } };
+
+  it('reprise d\'une liste : pas d\'appel au compte d\'un fournisseur Xtream', async () => {
+    vi.mocked(StorageService.getCredentials).mockResolvedValueOnce(list);
+    const setters = makeSetters();
+    const { result } = renderHook(() => useSessionLifecycle(setters, list, null, t));
+
+    await act(async () => { await result.current.resumeSession(); });
+
+    expect(setters.setIsLoggedIn).toHaveBeenCalledWith(true);
+    expect(authenticate).not.toHaveBeenCalled();
+  });
+
+  it('Réglages, même liste à une autre adresse : relue en entier, sans vérification Xtream', async () => {
+    const renewed = { ...list, m3u: { url: 'http://liste.invalid/output/m3u?token=nouveau-factice' } };
+    const setters = makeSetters();
+    const { result } = renderHook(() => useSessionLifecycle(setters, list, null, t));
+
+    await act(async () => { await result.current.updateCredentials(renewed); });
+
+    expect(ingestM3uCatalog).toHaveBeenCalledWith(renewed.m3u.url, undefined, expect.any(Function));
+    expect(authenticate).not.toHaveBeenCalled();
+    expect(ingestCatalog).not.toHaveBeenCalled();
+    expect(StorageService.saveCredentials).toHaveBeenCalledWith(renewed);
+  });
+
+  it('Réglages, abonnement Xtream remplacé par une liste : changement de fournisseur à confirmer', async () => {
+    const setters = makeSetters();
+    const { result } = renderHook(() => useSessionLifecycle(setters, creds, null, t));
+
+    await act(async () => { await result.current.updateCredentials(list); });
+
+    expect(setters.setPendingProviderChange).toHaveBeenCalledWith({ from: creds.host, to: list.host, creds: list });
+    expect(ingestM3uCatalog).not.toHaveBeenCalled();
+    expect(StorageService.saveCredentials).not.toHaveBeenCalled();
   });
 });
 

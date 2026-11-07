@@ -22,11 +22,13 @@
     box-sizing: border-box;
 }
 
-.channel-card:hover {
-    transform: translateY(-0.25rem);
-    border-color: var(--border-strong);
-    background: var(--glass-bg-heavy);
-    box-shadow: var(--shadow-md);
+@media (hover: hover) {
+  .channel-card:hover {
+      transform: translateY(-0.25rem);
+      border-color: var(--border-strong);
+      background: var(--glass-bg-heavy);
+      box-shadow: var(--shadow-md);
+  }
 }
 
 /* Bouton favori */
@@ -51,14 +53,18 @@
     z-index: 2;
 }
 
-.channel-card:hover .channel-card__favorite {
-    opacity: 1;
+@media (hover: hover) {
+  .channel-card:hover .channel-card__favorite {
+      opacity: 1;
+  }
 }
 
-.channel-card__favorite:hover {
-    background: var(--hover-overlay);
-    color: var(--text-primary);
-    transform: scale(1.1);
+@media (hover: hover) {
+  .channel-card__favorite:hover {
+      background: var(--hover-overlay);
+      color: var(--text-primary);
+      transform: scale(1.1);
+  }
 }
 
 /* Bouton Debug & Tooltip */
@@ -71,8 +77,10 @@
     transition: opacity var(--duration-fast);
 }
 
-.channel-card:hover .channel-card__debug-container {
-    opacity: 1;
+@media (hover: hover) {
+    .channel-card:hover .channel-card__debug-container {
+        opacity: 1;
+    }
 }
 
 .channel-card__debug-icon {
@@ -92,9 +100,11 @@
     transition: all var(--duration-fast);
 }
 
-.channel-card__debug-icon:hover {
-    background: var(--color-brand-primary);
-    color: white;
+@media (hover: hover) {
+    .channel-card__debug-icon:hover {
+        background: var(--color-brand-primary);
+        color: white;
+    }
 }
 
 /* Tooltip Popup */
@@ -108,6 +118,7 @@
     border-radius: var(--radius-md);
     padding: var(--space-3);
     width: max-content;
+    /* stylelint-disable-next-line defensive-css/no-fixed-sizes -- fenêtre de diagnostic (développement seulement) : largeur de confort */
     max-width: 250px;
     box-shadow: 0 10px 25px rgba(0,0,0,0.8);
     pointer-events: none;
@@ -129,7 +140,7 @@
 }
 
 .channel-card__debug-container--pinned {
-    opacity: 1 !important;
+    opacity: 1;
 }
 
 .channel-card__debug-container--pinned .channel-card__debug-icon {
@@ -144,8 +155,10 @@
     border-color: rgba(239, 68, 68, 0.3);
 }
 
-.channel-card__favorite--active:hover {
-    background: rgba(239, 68, 68, 0.25);
+@media (hover: hover) {
+  .channel-card__favorite--active:hover {
+      background: rgba(239, 68, 68, 0.25);
+  }
 }
 
 /* Logo container - occupe la majorité de l'espace */
@@ -177,8 +190,10 @@
     transition: color var(--duration-fast) var(--ease-out);
 }
 
-.channel-card:hover .channel-card__name {
-    color: var(--text-secondary);
+@media (hover: hover) {
+  .channel-card:hover .channel-card__name {
+      color: var(--text-secondary);
+  }
 }
 
 /* ── EPG Info ── */

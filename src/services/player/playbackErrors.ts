@@ -11,7 +11,7 @@
  */
 
 export type PlaybackErrorKind =
-  /** HTTP 458 (Xtream), 429, 509 : trop de flux simultanés sur le compte */
+  /** HTTP 458 (Xtream), 460, 429, 509 : trop de flux simultanés sur le compte (ou lecteur refusé) */
   | 'connection_limit'
   /** 401 / 403 / 405 / 407 : compte expiré, IP bloquée, accès refusé */
   | 'access_denied'
@@ -69,7 +69,8 @@ export const RECOVERY_PLAYBACK_S = 60;
 
 export function classifyHttpStatus(status: number | undefined | null): PlaybackErrorKind {
   if (status === undefined || status === null || status <= 0) return 'network';
-  if (status === 458 || status === 429 || status === 509) return 'connection_limit';
+  // 460 : code propre à certains fournisseurs, même famille de refus que le 458 (retour Sentry du 01/11)
+  if (status === 458 || status === 460 || status === 429 || status === 509) return 'connection_limit';
   if (status === 401 || status === 403 || status === 405 || status === 407) return 'access_denied';
   if (status === 404 || status === 410) return 'not_found';
   if (status >= 500) return 'server';

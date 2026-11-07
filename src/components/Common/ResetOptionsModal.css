@@ -25,8 +25,10 @@
     transition: background var(--duration-fast) var(--ease-out);
 }
 
-.reset-option-item:hover {
-    background: var(--active-overlay);
+@media (hover: hover) {
+  .reset-option-item:hover {
+      background: var(--active-overlay);
+  }
 }
 
 .reset-option-item input[type="checkbox"] {

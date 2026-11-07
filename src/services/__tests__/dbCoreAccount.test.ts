@@ -41,10 +41,22 @@ describe('dbCore et compte', () => {
         expect(isDatabaseOf('a')).toBe(false);
     });
 
-    it('clearAllData oublie le dernier accord de Ma liste (sinon la synchro viderait Ma liste du cloud)', async () => {
+    it('clearAllData oublie les deux derniers accords de Ma liste (sinon la synchro viderait Ma liste du cloud)', async () => {
         setDatabaseName('a');
         await clearAllData();
-        expect(mockDb.execute).toHaveBeenCalledWith(`DELETE FROM meta WHERE key = 'sync_baseline:watchlist'`);
+        expect(mockDb.execute).toHaveBeenCalledWith(
+            `DELETE FROM meta WHERE key IN ('sync_baseline:watchlist', 'sync_baseline:watchlist_v2')`,
+        );
+    });
+
+    it('une synchro de Ma liste par fournisseur en cours pendant clearAllData ne peut plus réécrire son dernier accord', async () => {
+        setDatabaseName('a');
+        setCurrentSyncUserId('a');
+        await getDatabase();
+        const read = await readBaseline('a', 'watchlist_v2');
+        await clearAllData();
+        expect(canStillWrite('a', read)).toBe(false);
+        setCurrentSyncUserId(null);
     });
 
     it('une synchro de Ma liste en cours pendant clearAllData ne peut plus réécrire le dernier accord', async () => {

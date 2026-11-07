@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import type { XtreamEpisode, AppSeriesInfo } from '../types/xtream';
 import { XtreamApiService } from '../services/xtreamApi';
 import { StorageService } from '../services/storage';
+import { getM3uSeriesEpisodes } from '../services/m3uCatalog';
 import {
   getProgressByStreamIds,
   EpisodeProgressInfo,
@@ -47,6 +48,13 @@ export function useSeriesDetail({ series }: UseSeriesDetailParams) {
 
     const loadEpisodes = async () => {
       try {
+        // Série venue d'une liste M3U : ses épisodes sont dans le catalogue, rien à demander au fournisseur
+        const m3uEpisodes = await getM3uSeriesEpisodes(Number(series.series_id));
+        if (m3uEpisodes) {
+          if (mounted) setLocalEpisodes(m3uEpisodes);
+          return;
+        }
+
         const creds = await StorageService.getCredentials();
         if (!creds) {
           setIsEpisodesLoading(false);

@@ -3,13 +3,25 @@ import { createClient } from "npm:@supabase/supabase-js@2";
 import * as jose from "jsr:@panva/jose@6";
 import {
   mayWriteCache,
+  mayWriteSearchCache,
+  searchResultCount,
+  normalizeSearchQuery,
+  searchCacheKey,
   normalizeGenres,
   normalizeLanguage,
   normalizeSeasonNumber,
   normalizeTmdbId,
 } from "../_shared/tmdbRequest.ts";
-import { isSignedInAccount, TOKEN_AUDIENCE } from "../_shared/tokenClaims.ts";
+import { isGuestToken, isSignedInAccount, TOKEN_AUDIENCE } from "../_shared/tokenClaims.ts";
+import { clientAddress, guestVerdict, retryAfterSeconds } from "../_shared/guestQuota.ts";
 import { corsHeaders } from "../_shared/cors.ts";
+import {
+  BATCH_CONCURRENCY,
+  type BatchItem,
+  mapWithLimit,
+  parseBatchItems,
+  slimSearchAnswer,
+} from "../_shared/tmdbBatch.ts";
 
 // CORS: the app's origins only (shared list, see ../_shared/cors.ts)
 const getCorsHeaders = (req: Request) => corsHeaders(req, "GET, OPTIONS");
@@ -29,7 +41,13 @@ const SUPABASE_JWT_KEYS = jose.createRemoteJWKSet(
   new URL(Deno.env.get("SUPABASE_URL")! + "/auth/v1/.well-known/jwks.json")
 );
 
-async function verifyAndExtractUserId(req: Request): Promise<string> {
+/** Who is calling: a signed-in account, or a guest (anonymous sign-in, counted in the database). */
+interface Caller {
+  userId: string;
+  guest: boolean;
+}
+
+async function verifyCaller(req: Request): Promise<Caller> {
   const authHeader = req.headers.get("Authorization");
   if (!authHeader) {
     throw new Error("Missing Authorization header");
@@ -45,8 +63,10 @@ async function verifyAndExtractUserId(req: Request): Promise<string> {
     issuer: SUPABASE_JWT_ISSUER,
     audience: TOKEN_AUDIENCE,
   });
-  // Signed-in accounts only: no anonymous sign-in
-  if (!isSignedInAccount(payload as Record<string, unknown>)) {
+  const claims = payload as Record<string, unknown>;
+  // A guest token is told apart here; the account check itself is unchanged
+  const guest = isGuestToken(claims);
+  if (!guest && !isSignedInAccount(claims)) {
     throw new Error("Invalid token: not a signed-in account");
   }
 
@@ -55,7 +75,36 @@ async function verifyAndExtractUserId(req: Request): Promise<string> {
     throw new Error("Invalid token: missing user ID (sub claim)");
   }
 
-  return userId;
+  return { userId, guest };
+}
+
+// ============================================================================
+// GUEST LIMITS — asked to the database on every guest request (closed by default)
+// ============================================================================
+
+/** Longest wait for the database's answer before a guest is refused */
+const GUEST_QUOTA_TIMEOUT_MS = 3000;
+
+async function askGuestQuota(
+  supabaseAdmin: ReturnType<typeof createClient>,
+  userId: string,
+  address: string | null,
+) {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<null>((resolve) => {
+    timer = setTimeout(() => resolve(null), GUEST_QUOTA_TIMEOUT_MS);
+  });
+  try {
+    const result = await Promise.race([
+      supabaseAdmin.rpc("nyx_invite_demande", { p_invite: userId, p_adresse: address }),
+      timeout,
+    ]);
+    return guestVerdict(result as { data?: unknown; error?: unknown } | null);
+  } catch {
+    return guestVerdict(null);
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 // ============================================================================
@@ -71,6 +120,7 @@ if (!TMDB_TOKEN) {
 
 const TTL_DETAILS = 604800;  // 7 days
 const TTL_LISTS = 86400;     // 24 hours
+const TTL_SEARCH = 604800;   // 7 days: titles of a list are searched again by every user; a title TMDB adds today is found within a week
 
 // ============================================================================
 // HELPERS
@@ -145,7 +195,7 @@ async function fetchTmdb(endpoint: string, params: Record<string, string> = {}):
 
 interface CacheResult {
   data: unknown;
-  cacheStatus: "HIT" | "MISS";
+  cacheStatus: "HIT" | "MISS" | "BYPASS";
 }
 
 async function getOrFetchCached(
@@ -176,9 +226,11 @@ async function getOrFetchCached(
   //    still answers, it just stops growing. Refreshing an existing row never adds one.
   let rowCount: number | null = null;
   if (!cached) {
+    // Titles and lists only: the title searches have their own budget and never take their places
     const { count } = await supabaseAdmin
       .from("tmdb_cache")
-      .select("cache_key", { count: "exact", head: true });
+      .select("cache_key", { count: "exact", head: true })
+      .not("cache_key", "like", "search:%");
     rowCount = count ?? null;
   }
   if (mayWriteCache(Boolean(cached), rowCount, JSON.stringify(freshData).length)) {
@@ -196,6 +248,54 @@ async function getOrFetchCached(
   }
 
   return { data: freshData, cacheStatus: "MISS" };
+}
+
+// ============================================================================
+// TITLE SEARCH CACHE — same table, own row budget (see _shared/tmdbRequest.ts)
+// ============================================================================
+
+async function searchCached(
+  supabaseAdmin: ReturnType<typeof createClient>,
+  kind: "movie" | "tv",
+  language: string,
+  year: string,
+  rawQuery: string,
+  endpoint: string,
+  tmdbParams: (query: string) => Record<string, string>
+): Promise<CacheResult> {
+  const query = normalizeSearchQuery(rawQuery);
+  // Not a plausible cleaned title: answered, never cached
+  if (!query) return { data: await fetchTmdb(endpoint, tmdbParams(rawQuery)), cacheStatus: "BYPASS" };
+
+  const key = searchCacheKey(kind, language, year, query);
+  const { data: cached } = await supabaseAdmin
+    .from("tmdb_cache")
+    .select("data, cached_at")
+    .eq("cache_key", key)
+    .maybeSingle();
+  if (cached && Date.now() / 1000 - new Date(cached.cached_at).getTime() / 1000 < TTL_SEARCH) {
+    return { data: cached.data, cacheStatus: "HIT" };
+  }
+
+  const fresh = await fetchTmdb(endpoint, tmdbParams(query));
+  let count: number | null = null;
+  // An answer without result is never written: no need to count the rows
+  if (!cached && searchResultCount(fresh) > 0) {
+    const result = await supabaseAdmin
+      .from("tmdb_cache")
+      .select("cache_key", { count: "exact", head: true })
+      .like("cache_key", "search:%");
+    count = result.count ?? null;
+  }
+  if (mayWriteSearchCache(Boolean(cached), count, JSON.stringify(fresh).length, searchResultCount(fresh))) {
+    await supabaseAdmin
+      .from("tmdb_cache")
+      .upsert(
+        { cache_key: key, data: fresh, cached_at: new Date().toISOString(), ttl_seconds: TTL_SEARCH },
+        { onConflict: "cache_key" }
+      );
+  }
+  return { data: fresh, cacheStatus: "MISS" };
 }
 
 // ============================================================================
@@ -221,6 +321,7 @@ function matchRoute(pathname: string): RouteMatch | null {
     "/popular": "/popular",
     "/search/movie": "/search/movie",
     "/search/tv": "/search/tv",
+    "/search/batch": "/search/batch",
     // Original TMDB routes (sent by tmdbApi.ts client)
     "/movie/now_playing": "/now-playing",
     "/movie/popular": "/popular",
@@ -264,6 +365,44 @@ function matchRoute(pathname: string): RouteMatch | null {
   if (match) return { route: "/genre/:id", params: { id: match[1] } };
 
   return null;
+}
+
+// ============================================================================
+// GROUPED TITLE SEARCH — several titles in one call (see _shared/tmdbBatch.ts)
+// ============================================================================
+
+/**
+ * Searches the first `allowed` titles (cache first, TMDB for the others, a few at a time); the titles
+ * past the caller's limits are answered `limited`, a title whose search failed `error`. The app keeps
+ * both unsearched and asks again later.
+ */
+async function handleBatch(
+  supabaseAdmin: ReturnType<typeof createClient>,
+  items: BatchItem[],
+  allowed: number,
+  searchParams: URLSearchParams,
+  cors: CorsHeaders
+): Promise<Response> {
+  const language = normalizeLanguage(searchParams.get("language"));
+  if (!language) return errorResponse("Invalid 'language' parameter", cors);
+  const answers = await mapWithLimit(items, BATCH_CONCURRENCY, async (item, index) => {
+    const echo = { kind: item.kind, year: item.year, query: item.query };
+    if (index >= allowed) return { ...echo, status: "limited" };
+    try {
+      const endpoint = item.kind === "movie" ? "/search/movie" : "/search/tv";
+      const { data } = await searchCached(
+        supabaseAdmin, item.kind, language, item.year, item.query, endpoint,
+        (q) => item.kind === "movie"
+          ? { query: q, year: item.year, language }
+          : (item.year ? { query: q, language, first_air_date_year: item.year } : { query: q, language })
+      );
+      return { ...echo, status: "ok", results: slimSearchAnswer(item.kind, data) };
+    } catch (err) {
+      console.error("[tmdb-proxy] batch item failed:", err instanceof TmdbHttpError ? err.status : "unknown");
+      return { ...echo, status: "error" };
+    }
+  });
+  return jsonResponse({ results: answers }, cors, 200, "BYPASS");
 }
 
 // ============================================================================
@@ -340,9 +479,11 @@ async function handleRoute(
       if (query.length > MAX_QUERY_LENGTH) return errorResponse("'query' too long", cors);
       if (year && !YEAR_RE.test(year)) return errorResponse("Invalid 'year' parameter", cors);
 
-      // Free text: never cached, every spelling would be a new row
-      const data = await fetchTmdb("/search/movie", { query, year, language });
-      return jsonResponse(data, cors, 200, "BYPASS");
+      const { data, cacheStatus } = await searchCached(
+        supabaseAdmin, "movie", language, year, query, "/search/movie",
+        (q) => ({ query: q, year, language })
+      );
+      return jsonResponse(data, cors, 200, cacheStatus);
     }
 
     case "/search/tv": {
@@ -353,11 +494,11 @@ async function handleRoute(
       if (query.length > MAX_QUERY_LENGTH) return errorResponse("'query' too long", cors);
       if (year && !YEAR_RE.test(year)) return errorResponse("Invalid 'year' parameter", cors);
 
-      // Free text: never cached, every spelling would be a new row
-      const tmdbParams: Record<string, string> = { query, language };
-      if (year) tmdbParams.first_air_date_year = year;
-      const data = await fetchTmdb("/search/tv", tmdbParams);
-      return jsonResponse(data, cors, 200, "BYPASS");
+      const { data, cacheStatus } = await searchCached(
+        supabaseAdmin, "tv", language, year, query, "/search/tv",
+        (q) => (year ? { query: q, language, first_air_date_year: year } : { query: q, language })
+      );
+      return jsonResponse(data, cors, 200, cacheStatus);
     }
 
     // ---- LISTS (TTL 24 hours) ----
@@ -480,7 +621,8 @@ const RATE_LIMIT_MAX = 60;           // 60 requests per window
 /** Map<userId, timestamp[]> — purged naturally when isolate recycles */
 const rateLimitMap = new Map<string, number[]>();
 
-function checkRateLimit(userId: string): boolean {
+/** `weight`: requests this call counts for (a grouped search counts each of its titles) */
+function checkRateLimit(userId: string, weight = 1): boolean {
   const now = Date.now();
   const windowStart = now - RATE_LIMIT_WINDOW_MS;
 
@@ -494,11 +636,11 @@ function checkRateLimit(userId: string): boolean {
   const recent = timestamps.filter((t) => t > windowStart);
   rateLimitMap.set(userId, recent);
 
-  if (recent.length >= RATE_LIMIT_MAX) {
+  if (recent.length + weight > RATE_LIMIT_MAX) {
     return false; // Rate limited
   }
 
-  recent.push(now);
+  for (let i = 0; i < weight; i++) recent.push(now);
   return true; // Allowed
 }
 
@@ -521,17 +663,78 @@ Deno.serve(async (req: Request) => {
 
   try {
     // 1. Verify JWT via JWKS (cryptographic signature verification)
-    let userId: string;
+    let caller: Caller;
     try {
-      userId = await verifyAndExtractUserId(req);
+      caller = await verifyCaller(req);
     } catch (err) {
       // No account id and no token detail in the logs or the response
       console.error("[tmdb-proxy] JWT verification failed:", err instanceof Error ? err.name : "unknown");
       return errorResponse("Invalid or expired token", cors, 401);
     }
 
-    // 2. Rate limit check (60 req/min per user)
-    if (!checkRateLimit(userId)) {
+    // 2. Route first (no database call): a grouped search counts each of its titles in the limits
+    const url = new URL(req.url);
+    const routeMatch = matchRoute(url.pathname);
+    if (!routeMatch) {
+      return errorResponse(`Unknown endpoint: ${url.pathname}`, cors, 404);
+    }
+    let batch: BatchItem[] | null = null;
+    if (routeMatch.route === "/search/batch") {
+      batch = parseBatchItems(url.searchParams.getAll("t"));
+      if (!batch) return errorResponse("Invalid 't' parameters", cors);
+      if (!normalizeLanguage(url.searchParams.get("language"))) return errorResponse("Invalid 'language' parameter", cors);
+    }
+    // Guests: each title counts (their database limits are small). Accounts: one per 4 titles, so a
+    // grouped search of the home cards leaves room for the cards opened right after
+    const guestWeight = batch ? batch.length : 1;
+    const accountWeight = batch ? Math.ceil(batch.length / 4) : 1;
+    let allowed = guestWeight;
+
+    // Admin client for the guest limits and the cache (bypasses RLS)
+    const supabaseAdmin = createClient(
+      Deno.env.get("SUPABASE_URL") ?? "",
+      serverKey()
+    );
+
+    // 3. Guests: limits kept in the database (per device, per address, all guests together).
+    //    Every guest request is counted, cached answers included. No address or account id in logs.
+    if (caller.guest) {
+      // A guest past its limits that keeps calling is stopped here first, without a database call
+      if (!checkRateLimit(caller.userId, guestWeight)) {
+        return new Response(
+          JSON.stringify({ error: "Guest limit reached", reason: "minute", retry_at: null }),
+          { status: 429, headers: { ...cors, "Content-Type": "application/json", "Retry-After": "60" } }
+        );
+      }
+      // One count per title, in order, until the first refusal: the titles before it are searched
+      const address = clientAddress(req.headers);
+      let verdict = await askGuestQuota(supabaseAdmin, caller.userId, address);
+      allowed = verdict.allowed ? 1 : 0;
+      while (verdict.allowed && allowed < guestWeight) {
+        const next = await askGuestQuota(supabaseAdmin, caller.userId, address);
+        if (!next.allowed) break;
+        allowed++;
+      }
+      if (!verdict.allowed) {
+        const unavailable = verdict.reason === "unavailable";
+        if (unavailable) console.error("[tmdb-proxy] guest limits unavailable");
+        // Guest erased by the nightly purge (or no longer anonymous): its token is still signed, but
+        // the app must sign in again as a new guest, not retry
+        if (verdict.reason === "unknown") return errorResponse("Invalid or expired token", cors, 401);
+        return new Response(
+          JSON.stringify({ error: "Guest limit reached", reason: verdict.reason, retry_at: verdict.retryAt }),
+          {
+            status: unavailable ? 503 : 429,
+            headers: {
+              ...cors,
+              "Content-Type": "application/json",
+              "Retry-After": String(retryAfterSeconds(verdict.retryAt)),
+            },
+          }
+        );
+      }
+    } else if (!checkRateLimit(caller.userId, accountWeight)) {
+      // Accounts: 60 requests per minute, counted in this instance's memory (approximate)
       console.warn("[tmdb-proxy] rate limited");
       return new Response(
         JSON.stringify({ error: "Rate limit exceeded — max 60 requests per minute" }),
@@ -542,21 +745,8 @@ Deno.serve(async (req: Request) => {
       );
     }
 
-    // 3. Create admin client for cache operations (bypasses RLS)
-    const supabaseAdmin = createClient(
-      Deno.env.get("SUPABASE_URL") ?? "",
-      serverKey()
-    );
-
-    // 4. Parse route
-    const url = new URL(req.url);
-    const routeMatch = matchRoute(url.pathname);
-
-    if (!routeMatch) {
-      return errorResponse(`Unknown endpoint: ${url.pathname}`, cors, 404);
-    }
-
-    // 5. Handle route
+    // 4. Handle route
+    if (batch) return await handleBatch(supabaseAdmin, batch, allowed, url.searchParams, cors);
     return await handleRoute(supabaseAdmin, routeMatch, url.searchParams, cors);
 
   } catch (err) {

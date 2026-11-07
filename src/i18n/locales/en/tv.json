@@ -1,4 +1,5 @@
 {
+  "loading_channels": "Loading channels…",
   "favorites_title": "My Favorites",
   "channels_default": "Channels",
   "channels_count": "{{count}} channels",

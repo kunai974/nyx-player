@@ -35,19 +35,30 @@ use sqlx::{Column, ConnectOptions, Connection, Executor, Row, Sqlite, TypeInfo, 
 use tauri::{Manager, State};
 use tokio::sync::RwLock;
 
-use crate::storage::{finish_pending_reset, sanitize_error_path, validate_db_name};
+use crate::storage::{catalog_db_path, finish_pending_reset, sanitize_error_path, validate_catalog_db_name};
 
 /// Bases ouvertes par la page, par nom (`sqlite:nyxplayer_<uuid>.db`, comme le plugin).
 #[derive(Default)]
 pub struct NyxDatabases(RwLock<HashMap<String, SqlitePool>>);
 
-/// Nom de fichier de la base demandée : `sqlite:` suivi de `nyxplayer_<uuid>.db`, rien d'autre
-/// (ni chemin absolu, ni dossier, ni ancienne base `nyxplayer.db`).
+impl NyxDatabases {
+    /// Ferme et oublie la base de ce fichier, si la page l'a ouverte (avant de supprimer le fichier).
+    pub async fn forget(&self, file_name: &str) {
+        let pool = self.0.write().await.remove(&format!("sqlite:{}", file_name));
+        if let Some(pool) = pool {
+            pool.close().await;
+        }
+    }
+}
+
+/// Nom de fichier de la base demandée : `sqlite:` suivi de `nyxplayer_<uuid>.db` (base du compte)
+/// ou de `nyxcat_<uuid>_<uuid>.db` (catalogue d'une source), rien d'autre (ni chemin absolu, ni
+/// dossier, ni ancienne base `nyxplayer.db`).
 fn database_file_name(db: &str) -> Result<&str, String> {
     let name = db
         .strip_prefix("sqlite:")
         .ok_or_else(|| format!("invalid connection url: {}", db))?;
-    validate_db_name(name)?;
+    validate_catalog_db_name(name)?;
     Ok(name)
 }
 
@@ -201,6 +212,29 @@ async fn select_on(
     Ok(result)
 }
 
+/// Mises à niveau de structure qu'un `CREATE TABLE IF NOT EXISTS` de la page ne peut pas faire
+/// (changement de clé), par une connexion Rust non gardée, avant que la page n'ouvre la base.
+/// Un échec (base occupée…) laisse la base telle quelle, lisible comme avant : nouvel essai à la
+/// prochaine ouverture.
+async fn upgrade_existing_schema(path: &Path) {
+    if !path.exists() {
+        return;
+    }
+    let path = path.to_path_buf();
+    let result = tokio::task::spawn_blocking(move || -> rusqlite::Result<bool> {
+        let conn = rusqlite::Connection::open(&path)?;
+        conn.busy_timeout(std::time::Duration::from_secs(5))?;
+        crate::schema::upgrade_categories_key(&conn)
+    })
+    .await;
+    match result {
+        Ok(Ok(true)) => eprintln!("[secure_db] categories: clé (type, numéro) installée"),
+        Ok(Ok(false)) => {}
+        Ok(Err(e)) => eprintln!("[secure_db] categories: mise à niveau remise à plus tard ({})", sanitize_error_path(e.to_string())),
+        Err(e) => eprintln!("[secure_db] categories: mise à niveau interrompue ({})", e),
+    }
+}
+
 /// Commande : ouvre la base du compte (`sqlite:nyxplayer_<uuid>.db`) dans le dossier de l'app.
 #[tauri::command]
 pub async fn nyx_db_load(
@@ -220,8 +254,12 @@ pub async fn nyx_db_load(
     // Même dossier que `full_reset` (dossier des données, identique à celui-ci sous Windows et Android)
     if let Ok(data_dir) = app.path().app_data_dir() {
         finish_pending_reset(&data_dir, file_name);
+        // Catalogue d'une source en cours de suppression : jamais rouvert (ni recréé)
+        catalog_db_path(&data_dir, file_name)?;
     }
-    let pool = open_pool(&dir.join(file_name))
+    let path = dir.join(file_name);
+    upgrade_existing_schema(&path).await;
+    let pool = open_pool(&path)
         .await
         .map_err(|e| sanitize_error_path(e.to_string()))?;
     databases.0.write().await.insert(db.clone(), pool);
@@ -413,6 +451,46 @@ mod tests {
         ] {
             assert!(database_file_name(rejected).is_err(), "should be rejected: {}", rejected);
         }
+    }
+
+    const SOURCE: &str = "6a1e5c3b-9d2f-4e7a-b8c1-0d2e4f6a8b9c";
+
+    #[test]
+    fn the_catalogue_file_of_a_source_is_accepted_and_nothing_more() {
+        let valid = format!("sqlite:nyxcat_{}_{}.db", UUID, SOURCE);
+        assert_eq!(database_file_name(&valid).unwrap(), format!("nyxcat_{}_{}.db", UUID, SOURCE));
+        for rejected in [
+            format!("sqlite:nyxcat_{}.db", UUID),
+            format!("sqlite:nyxcat_{}_{}_{}.db", UUID, SOURCE, SOURCE),
+            format!("sqlite:../nyxcat_{}_{}.db", UUID, SOURCE),
+            format!("sqlite:nyxcat_{}_{}.db", UUID, SOURCE.to_uppercase()),
+            format!("sqlite:nyxidx_{}.db", UUID),
+            format!("nyxcat_{}_{}.db", UUID, SOURCE),
+        ] {
+            assert!(database_file_name(&rejected).is_err(), "should be rejected: {}", rejected);
+        }
+    }
+
+    #[tokio::test]
+    async fn forgetting_a_database_closes_it_and_only_it() {
+        let dir = test_dir("forget");
+        let catalog = format!("nyxcat_{}_{}.db", UUID, SOURCE);
+        let account = format!("nyxplayer_{}.db", UUID);
+        let databases = NyxDatabases::default();
+        for name in [&catalog, &account] {
+            let pool = open_pool(&dir.join(name)).await.unwrap();
+            databases.0.write().await.insert(format!("sqlite:{}", name), pool);
+        }
+        let catalog_pool = databases.0.read().await.get(&format!("sqlite:{}", catalog)).cloned().unwrap();
+        databases.forget(&catalog).await;
+        assert!(catalog_pool.is_closed());
+        let pools = databases.0.read().await;
+        assert!(!pools.contains_key(&format!("sqlite:{}", catalog)));
+        assert!(!pools.get(&format!("sqlite:{}", account)).unwrap().is_closed());
+        // Rien d'ouvert sous ce nom : rien à faire, sans erreur
+        drop(pools);
+        databases.forget(&catalog).await;
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[tokio::test]
@@ -669,6 +747,8 @@ mod tests {
     async fn search(pool: &SqlitePool, fts_query: &str, limit: i64) -> Vec<(String, String, f64)> {
         let query = ts_query(SEARCH_INDEX_TS, "searchIndex.ts", "SELECT content_id, name, content_type");
         assert!(query.contains("normalized_name MATCH ?") && query.contains("ORDER BY rank"), "recherche changée : {}", query);
+        // Une seule requête : les `limit` premiers de chaque type (films, séries, chaînes)
+        assert!(query.contains("PARTITION BY content_type ORDER BY rank"), "limite par type changée : {}", query);
         select_on(pool, query, vec![json!(fts_query), json!(limit)])
             .await
             .expect("recherche refusée")
@@ -734,6 +814,7 @@ mod tests {
         assert_eq!(search(&pool, "spider*", 1).await.len(), 1, "LIMIT lié par la page");
         assert!(search(&pool, "zorro*", 100).await.is_empty());
 
+
         // rebuildBesideOldRows : nouvelles lignes à côté des anciennes, puis retrait des anciennes
         let last = ts_query(SEARCH_INDEX_TS, "searchIndex.ts", "SELECT rowid FROM search_index ORDER BY rowid DESC");
         let max_old = select_on(&pool, last, vec![]).await.expect("dernier numéro de ligne refusé")[0]["rowid"].clone();
@@ -750,13 +831,6 @@ mod tests {
             vec![("movie".to_string(), "Spider-Man: No Way Home".to_string(), 1.0)]
         );
 
-        // Reconstruction arrêtée en route : retrait de ce qu'elle a ajouté (au-delà de l'ancien maximum)
-        insert_rows(&pool, &[("Dune", "dune", "movie", 4)]).await;
-        let undo = ts_query(SEARCH_INDEX_TS, "searchIndex.ts", "DELETE FROM search_index WHERE rowid >");
-        let (undone, _) = execute_on(&pool, undo, vec![json!(6)]).await.expect("retour arrière refusé");
-        assert_eq!(undone, 1);
-        assert_eq!(rowids(&pool).await, vec![6]);
-
         // applyPendingSearchChanges : lignes d'un paquet de numéros retrouvées puis supprimées
         insert_rows(&pool, &[("Dune", "dune", "movie", 4), ("Arte", "arte", "live", 4)]).await;
         let lookup = ts_query(SEARCH_INDEX_TS, "searchIndex.ts", "SELECT rowid FROM search_index WHERE content_type = ?");
@@ -770,6 +844,28 @@ mod tests {
         assert_eq!(deleted, 2);
         assert!(search(&pool, "dune*", 100).await.is_empty());
         assert_eq!(search(&pool, "arte*", 100).await, vec![("live".to_string(), "Arte".to_string(), 4.0)]);
+
+        // Noms en arabe, cyrillique, grec et chinois, rangés par normalizeName (version 2) : le
+        // découpage en mots de FTS5 (unicode61) les trouve par début de mot comme les noms latins
+        insert_rows(
+            &pool,
+            &[
+                ("مسلسل الهيبة", "مسلسل الهيبة", "series", 11),
+                ("Кино 2024", "кино 2024", "movie", 12),
+                ("Ελληνικά", "ελληνικα", "live", 13),
+                ("東京", "東京", "movie", 14),
+            ],
+        )
+        .await;
+        assert_eq!(search(&pool, "الهيبة*", 100).await, vec![("series".to_string(), "مسلسل الهيبة".to_string(), 11.0)]);
+        assert_eq!(search(&pool, "кин*", 100).await, vec![("movie".to_string(), "Кино 2024".to_string(), 12.0)]);
+        assert_eq!(search(&pool, "ελλη*", 100).await, vec![("live".to_string(), "Ελληνικά".to_string(), 13.0)]);
+        assert_eq!(search(&pool, "東京*", 100).await, vec![("movie".to_string(), "東京".to_string(), 14.0)]);
+
+        // Limite par type : deux chaînes trouvées ne prennent pas la place du film
+        insert_rows(&pool, &[("Kino TV", "kino tv", "live", 15), ("Kino Live", "kino live", "live", 16), ("Kino Film", "kino film", "movie", 17)]).await;
+        let kino = search(&pool, "kino*", 1).await;
+        assert_eq!(kino.iter().map(|r| r.0.as_str()).collect::<Vec<_>>(), ["movie", "live"]);
 
         pool.close().await;
         let _ = std::fs::remove_dir_all(&dir);

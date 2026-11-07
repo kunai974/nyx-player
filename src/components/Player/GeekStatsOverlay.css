@@ -79,8 +79,10 @@
     height: 1.1rem;
 }
 
-.geek-stats-close:hover {
-    color: var(--text-primary);
+@media (hover: hover) {
+  .geek-stats-close:hover {
+      color: var(--text-primary);
+  }
 }
 
 .geek-stats-grid {

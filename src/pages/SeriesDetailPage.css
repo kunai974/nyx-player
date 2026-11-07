@@ -37,14 +37,6 @@
   transform: scale(1);
 }
 
-/* Page hiding before unmount - simple fade out (cohérent sidebar) */
-.series-detail-page.is-exiting {
-  opacity: 0 !important;
-  transition: opacity 150ms var(--ease-out) !important;
-  animation: none !important;
-  pointer-events: none;
-}
-
 /* Backdrop as full background */
 .series-detail-page .backdrop-bg {
   position: fixed;
@@ -156,7 +148,7 @@
   cursor: pointer;
   transition: all var(--duration-normal) var(--ease-out);
   z-index: var(--z-dropdown);
-  outline: none !important;
+  outline: none;
   -webkit-tap-highlight-color: transparent;
 }
 
@@ -172,13 +164,15 @@
   transition: opacity 0.4s var(--ease-out) 0.1s;
 }
 
-.series-detail-page .back-button:hover {
-  background: var(--active-overlay);
-  backdrop-filter: blur(0.625rem);
-  -webkit-backdrop-filter: blur(0.625rem);
-  border-color: var(--border-strong);
-  color: var(--text-primary);
-  transform: scale(1.1);
+@media (hover: hover) {
+  .series-detail-page .back-button:hover {
+    background: var(--active-overlay);
+    backdrop-filter: blur(0.625rem);
+    -webkit-backdrop-filter: blur(0.625rem);
+    border-color: var(--border-strong);
+    color: var(--text-primary);
+    transform: scale(1.1);
+  }
 }
 
 .series-detail-page .back-button svg {
@@ -188,8 +182,10 @@
   transition: transform var(--duration-normal) var(--ease-out);
 }
 
-.series-detail-page .back-button:hover svg {
-  transform: translateX(-2px);
+@media (hover: hover) {
+  .series-detail-page .back-button:hover svg {
+    transform: translateX(-2px);
+  }
 }
 
 /* Info Column - Relative container for skeleton/main swap */
@@ -321,9 +317,11 @@
   transition: all var(--duration-normal) var(--ease-out);
 }
 
-.series-detail-page .badge:hover {
-  background: var(--border-glass);
-  border-color: var(--border-strong);
+@media (hover: hover) {
+  .series-detail-page .badge:hover {
+    background: var(--border-glass);
+    border-color: var(--border-strong);
+  }
 }
 
 .series-detail-page .badge.rating .stars {
@@ -684,10 +682,12 @@
   flex-direction: column;
 }
 
-.series-detail-page .episode-card-netflix:hover {
-  background: var(--hover-overlay);
-  box-shadow: var(--shadow-lg);
-  border-color: var(--border-strong);
+@media (hover: hover) {
+  .series-detail-page .episode-card-netflix:hover {
+    background: var(--hover-overlay);
+    box-shadow: var(--shadow-lg);
+    border-color: var(--border-strong);
+  }
 }
 
 /* Episode Thumbnail — Aspect ratio driven, no fixed height */
@@ -761,14 +761,18 @@
   z-index: 10;
 }
 
-.series-detail-page .episode-card-netflix:hover .episode-reset-btn {
-  opacity: 1;
+@media (hover: hover) {
+  .series-detail-page .episode-card-netflix:hover .episode-reset-btn {
+    opacity: 1;
+  }
 }
 
-.series-detail-page .episode-reset-btn:hover {
-  background: rgba(74, 74, 208, 0.3);
-  border-color: var(--nyx-violet);
-  transform: scale(1.1);
+@media (hover: hover) {
+  .series-detail-page .episode-reset-btn:hover {
+    background: rgba(74, 74, 208, 0.3);
+    border-color: var(--nyx-violet);
+    transform: scale(1.1);
+  }
 }
 
 /* Reset Season Button - Pill style with text */
@@ -798,9 +802,11 @@
   min-height: 14px;
 }
 
-.series-detail-page .reset-season-btn:hover {
-  background: var(--nyx-violet-subtle);
-  border-color: var(--nyx-violet-border);
+@media (hover: hover) {
+  .series-detail-page .reset-season-btn:hover {
+    background: var(--nyx-violet-subtle);
+    border-color: var(--nyx-violet-border);
+  }
 }
 
 .series-detail-page .reset-season-btn span {
@@ -901,10 +907,12 @@
   margin-top: auto; /* Always pushed to bottom of card */
 }
 
-.series-detail-page .episode-play-btn:hover {
-  background: #f0f0f0;
-  transform: translateY(-1px);
-  box-shadow: 0 0.125rem 0.375rem rgba(255, 255, 255, 0.1);
+@media (hover: hover) {
+  .series-detail-page .episode-play-btn:hover {
+    background: #f0f0f0;
+    transform: translateY(-1px);
+    box-shadow: 0 0.125rem 0.375rem rgba(255, 255, 255, 0.1);
+  }
 }
 
 /* Responsive */

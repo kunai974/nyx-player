@@ -17,6 +17,7 @@ import { getPreferredSource } from '../services/contentPreferencesService';
 import { getMovieDetail, getSeriesDetail } from '../services/detailFetcher';
 import { getAllVersionsByTmdb } from '../utils/lightIndexHelpers';
 import { normalizeTmdbId } from '../utils/normalizeTmdb';
+import { findTitleTmdbIdWithin } from '../services/titleTmdbLookup';
 import { useNavigation } from '../contexts/NavigationContext';
 import { useSession } from '../contexts/SessionContext';
 import { devLog } from '../utils/devLog';
@@ -37,6 +38,13 @@ interface UseContentNavigationReturn {
  * plus lente gagnait et ouvrait la première carte.
  */
 let lastOpenRequest = 0;
+
+/**
+ * Attente maximale, à l'ouverture d'une fiche sans numéro TMDB, de la recherche de son numéro (détail
+ * chez le fournisseur, puis titre) : trouvé à temps, la fiche s'ouvre complète avec toutes ses
+ * versions ; sinon elle s'ouvre avec les données du fournisseur et se complète quand la réponse arrive.
+ */
+export const TITLE_LOOKUP_WAIT_MS = 1200;
 
 /** Abandonne l'ouverture de fiche encore en attente (retour arrière pendant l'attente) */
 export function cancelPendingOpen(): void {
@@ -61,8 +69,15 @@ export function useContentNavigation(): UseContentNavigationReturn {
         movie: IptvStream | XtreamMovie,
         allVersions?: (IptvStream | XtreamMovie)[]
     ): Promise<void> => {
-        const tmdbId = normalizeTmdbId('tmdb' in movie ? movie.tmdb : 0);
         const request = ++lastOpenRequest;
+        const streamId = Number(movie.stream_id);
+        // Numéro du fournisseur, sinon celui trouvé par le titre (catalogue en mémoire), sinon cherché
+        let tmdbId = normalizeTmdbId('tmdb' in movie ? movie.tmdb : 0)
+            || (lightIndexes?.movies.get(streamId)?.tmdbId ?? 0);
+        if (tmdbId <= 0) {
+            tmdbId = await findTitleTmdbIdWithin('movie', streamId, lightIndexes, TITLE_LOOKUP_WAIT_MS);
+            if (request !== lastOpenRequest) return;
+        }
 
         // Si allVersions fourni (depuis recherche groupée), utiliser directement
         if (allVersions && allVersions.length > 0) {
@@ -118,13 +133,22 @@ export function useContentNavigation(): UseContentNavigationReturn {
         series: IptvSeries,
         allVersions?: IptvSeries[]
     ): Promise<void> => {
-        const tmdbId = normalizeTmdbId(series.tmdb || 0);
         const request = ++lastOpenRequest;
+        const seriesId = Number(series.series_id);
+        // Numéro du fournisseur, sinon celui trouvé par le titre (catalogue en mémoire), sinon cherché
+        let tmdbId = normalizeTmdbId(series.tmdb || 0)
+            || (lightIndexes?.series.get(seriesId)?.tmdbId ?? 0);
+        if (tmdbId <= 0) {
+            tmdbId = await findTitleTmdbIdWithin('series', seriesId, lightIndexes, TITLE_LOOKUP_WAIT_MS);
+            if (request !== lastOpenRequest) return;
+        }
 
         // Si allVersions fourni, utiliser directement
         if (allVersions && allVersions.length > 0) {
             navigateToSeries({
                 ...series,
+                // Versions sans numéro du fournisseur (carte regroupée par le titre) : la fiche reçoit celui trouvé
+                ...(tmdbId > 0 && normalizeTmdbId(series.tmdb || 0) <= 0 ? { tmdb: tmdbId } : {}),
                 groupedVersions: allVersions,
             } as AppSeriesInfo);
             return;
@@ -156,7 +180,11 @@ export function useContentNavigation(): UseContentNavigationReturn {
         // Une autre fiche a été demandée pendant la lecture de la base : elle gagne
         if (request !== lastOpenRequest) return;
 
-        const finalSeries = selectedVersion || series;
+        const loadedSeries = selectedVersion || series;
+        // Numéro trouvé par le titre : la fiche le reçoit, la base du fournisseur n'en a pas
+        const finalSeries = tmdbId > 0 && normalizeTmdbId(loadedSeries.tmdb || 0) <= 0
+            ? { ...loadedSeries, tmdb: tmdbId }
+            : loadedSeries;
         navigateToSeries({
             ...finalSeries,
             groupedVersions: lightVersionsArray.length > 0 ? lightVersionsArray : [finalSeries],

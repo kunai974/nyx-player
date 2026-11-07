@@ -1,6 +1,6 @@
 use crate::catalog_parser::*;
 use crate::http::build_http_client;
-use crate::storage::{get_data_dir, validate_db_name};
+use crate::storage::{catalog_db_path, get_data_dir, validate_catalog_db_name};
 use std::collections::HashMap;
 use std::future::Future;
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
@@ -130,6 +130,29 @@ pub async fn iptv_fetch(url: String, dns_provider: String) -> Result<String, Str
     fetch_text(&client, &url, IPTV_FETCH_MAX_BYTES).await
 }
 
+/// Comme `iptv_fetch`, pour une adresse reçue d'un autre appareil (connexion de la TV par QR code) :
+/// seules les adresses publiques sont jointes, redirections comprises (`public_net.rs`).
+#[tauri::command]
+pub async fn iptv_fetch_public(url: String, dns_provider: String) -> Result<String, String> {
+    crate::public_net::check_start_url(&url)?;
+    static CLIENTS: OnceLock<Mutex<HashMap<String, reqwest::Client>>> = OnceLock::new();
+    let client = {
+        let mut clients = CLIENTS
+            .get_or_init(|| Mutex::new(HashMap::new()))
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        match clients.get(&dns_provider) {
+            Some(client) => client.clone(),
+            None => {
+                let client = crate::public_net::build_public_only_client(&dns_provider, 10, FETCH_TOTAL_TIMEOUT_SECS)?;
+                clients.insert(dns_provider.clone(), client.clone());
+                client
+            }
+        }
+    };
+    fetch_text(&client, &url, IPTV_FETCH_MAX_BYTES).await
+}
+
 /// Message d'une erreur réseau. Délai dépassé ou serveur injoignable (DNS, connexion refusée) :
 /// préfixe `PROVIDER_UNREACHABLE`, pour que la page ne parle pas d'identifiants refusés.
 fn request_error(context: &str, e: reqwest::Error) -> String {
@@ -231,21 +254,21 @@ pub fn cancel_catalog_ingestion() {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
-enum Interrupt {
+pub(crate) enum Interrupt {
     Deadline,
     Cancelled,
 }
 
 /// Échéance et arrêt d'un chargement, appliqués à chaque attente réseau.
 #[derive(Clone, Copy)]
-struct Stopper {
+pub(crate) struct Stopper {
     deadline: tokio::time::Instant,
     generation: u64,
     source: &'static AtomicU64,
 }
 
 impl Stopper {
-    fn new(limit: Duration, source: &'static AtomicU64) -> Self {
+    pub(crate) fn new(limit: Duration, source: &'static AtomicU64) -> Self {
         Stopper {
             deadline: tokio::time::Instant::now() + limit,
             generation: source.load(Ordering::SeqCst),
@@ -253,18 +276,18 @@ impl Stopper {
         }
     }
 
-    fn cancelled(&self) -> bool {
+    pub(crate) fn cancelled(&self) -> bool {
         self.source.load(Ordering::SeqCst) != self.generation
     }
 
     /// Attend `fut`, sauf si l'échéance passe ou si un arrêt est demandé entre-temps.
-    async fn run<F: Future>(&self, fut: F) -> Result<F::Output, Interrupt> {
+    pub(crate) async fn run<F: Future>(&self, fut: F) -> Result<F::Output, Interrupt> {
         self.wait(fut, Some(self.deadline)).await
     }
 
     /// Attend `fut` sans échéance, sauf si un arrêt est demandé (attente de son tour d'écriture :
     /// une déconnexion l'interrompt, la durée du téléchargement ne compte pas).
-    async fn run_until_cancelled<F: Future>(&self, fut: F) -> Result<F::Output, Interrupt> {
+    pub(crate) async fn run_until_cancelled<F: Future>(&self, fut: F) -> Result<F::Output, Interrupt> {
         self.wait(fut, None).await
     }
 
@@ -382,6 +405,10 @@ async fn fetch_list_with_backoff<T: crate::catalog_parser::ListItem>(
     budget: ListBudget<'_>,
 ) -> (Result<Vec<T>, String>, Vec<String>) {
     const MAX_RETRIES: u8 = 5;
+    // Liste lisible mais vide : un seul nouvel essai pour la confirmer (fournisseur instable qui
+    // répond vide une fois). Un compte sans chaînes, ou sans films, perdait sinon un quart de minute
+    // à chaque chargement sur cinq essais espacés.
+    const EMPTY_TRIES: u8 = 2;
     let mut logs: Vec<String> = Vec::new();
     // Vrai tant que chaque essai a reçu une liste lisible mais vide
     let mut always_empty = true;
@@ -410,6 +437,8 @@ async fn fetch_list_with_backoff<T: crate::catalog_parser::ListItem>(
                 emit(serde_json::json!({ "endpoint": endpoint_name, "status": "done", "count": list.items.len() }));
                 return (Ok(list.items), logs);
             }
+            // Vide à chaque essai, confirmé : rien de ce type chez ce fournisseur
+            Attempt::Received(_) if always_empty && attempt >= EMPTY_TRIES => break,
             // Retry si réponse vide (provider flaky)
             Attempt::Received(_) => warn(&mut logs, format!("⚠ {} réponse vide (attempt {}/{})", endpoint_name, attempt, MAX_RETRIES)),
             Attempt::Http(status) => warn(&mut logs, format!("⚠ {} HTTP {} (attempt {}/{})", endpoint_name, status, attempt, MAX_RETRIES)),
@@ -440,7 +469,7 @@ async fn fetch_list_with_backoff<T: crate::catalog_parser::ListItem>(
     // Liste vide à chaque essai : le fournisseur ne propose pas ce contenu (offre « chaînes
     // seulement »). Ce n'est pas une panne ; write_catalog garde quand même une liste déjà en base.
     if always_empty {
-        let msg = format!("✓ {} vide ({} essais) : rien de ce type chez ce fournisseur", endpoint_name, MAX_RETRIES);
+        let msg = format!("✓ {} vide ({} essais) : rien de ce type chez ce fournisseur", endpoint_name, EMPTY_TRIES);
         log::info!("[Ingestion] {}", msg);
         logs.push(msg);
         emit(serde_json::json!({ "endpoint": endpoint_name, "status": "done", "count": 0 }));
@@ -494,7 +523,7 @@ pub async fn ingest_catalog(
     db_name: String,
     dns_provider: String,
 ) -> Result<IngestResult, String> {
-    validate_db_name(&db_name)?;
+    validate_catalog_db_name(&db_name)?;
     // Pris avant tout : une déconnexion demandée à partir d'ici arrête ce chargement
     let stopper = Stopper::new(FETCH_PHASE_LIMIT, &INGEST_GENERATION);
     // A background catalogue refresh gives way to this full write (db_activity.rs)
@@ -623,9 +652,11 @@ pub async fn ingest_catalog(
         }),
     );
 
-    let db_path = get_data_dir(&app).join(&db_name);
+    // Vérifié après l'attente du tour : une source supprimée entre-temps n'est pas recréée
+    let db_path = catalog_db_path(&get_data_dir(&app), &db_name)?;
     let mut conn = open_connection(&db_path)?;
     let counts = write_catalog(&mut conn, &lists, &mut failed_endpoints, &mut all_logs)?;
+    note_source_provider(&conn, &db_name, &host);
     let progress_relinks = relink_progress_after_write(&mut conn, &counts);
 
     // =========================================================================
@@ -668,6 +699,21 @@ pub async fn ingest_catalog(
         logs: all_logs,
         progress_relinks,
     })
+}
+
+/// Fichier catalogue d'une source : il note l'adresse avec laquelle il a été rempli, comme la page
+/// le fait pour la base du compte. L'actualisation de fond s'arrête si on lui donne une autre
+/// adresse (`check_provider`), au lieu de mêler deux fournisseurs dans le même fichier.
+fn note_source_provider(conn: &rusqlite::Connection, db_name: &str, host: &str) {
+    if crate::storage::validate_source_catalog_name(db_name).is_err() {
+        return;
+    }
+    let noted = conn
+        .execute_batch("CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT);")
+        .and_then(|_| crate::catalog_refresh::meta_set(conn, "lastProvider", host));
+    if let Err(e) = noted {
+        log::warn!("[Ingestion] Adresse de la source non notée : {}", e);
+    }
 }
 
 /// Reprises de films dont le numéro n'existe plus : re-liées au film de même numéro TMDB, avec la
@@ -1334,8 +1380,9 @@ mod tests {
         let (result, _) = fetch_list_with_backoff::<XtreamMovie>(&client(), &url, "movies", &stopper, &no_emit, no_wait, budget(MAX_LIST_DOWNLOAD_BYTES, &unlimited())).await;
         // Avant le correctif : Err("movies failed after 5 retries"), donc chargement « partiel »
         assert!(result.unwrap().is_empty());
-        // Les nouveaux essais sont gardés (fournisseur instable qui répond vide une fois)
-        assert_eq!(hits.load(Ordering::SeqCst), 5);
+        // Un seul nouvel essai pour confirmer (fournisseur instable qui répond vide une fois) ; cinq
+        // essais espacés faisaient perdre un quart de minute à un compte sans ce type de contenu
+        assert_eq!(hits.load(Ordering::SeqCst), 2);
     }
 
     #[tokio::test]
@@ -1501,6 +1548,55 @@ mod tests {
         assert_eq!(counts.categories, 1);
         assert_eq!(movie_categories(&conn), vec!["99".to_string()]);
 
+        drop(conn);
+        let _ = std::fs::remove_file(&path);
+    }
+
+    // ---------- Fichier catalogue d'une source ----------
+
+    const SOURCE_FILE: &str = "nyxcat_550e8400-e29b-41d4-a716-446655440000_6a1e5c3b-9d2f-4e7a-b8c1-0d2e4f6a8b9c.db";
+
+    #[test]
+    fn a_source_file_holds_its_catalogue_and_its_address_and_nothing_personal() {
+        let dir = std::env::temp_dir().join(format!("nyx-ingestion-source-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        // Fichier neuf, sans aucune table de la page : le chargement s'y fait en entier
+        let path = crate::storage::catalog_db_path(&dir, SOURCE_FILE).unwrap();
+        let mut conn = open_connection(&path).unwrap();
+        let lists = FetchedLists {
+            movies: movies(r#"[{"stream_id":5,"name":"A","category_id":"10","tmdb":"777"}]"#),
+            vod_cats: cats(r#"[{"category_id":"10","category_name":"Action"}]"#),
+            ..Default::default()
+        };
+        let (failed, relinks) = write_then_relink(&mut conn, &lists);
+        assert!(!failed.iter().any(|f| f == "movies"), "{failed:?}");
+        assert!(relinks.is_empty());
+        note_source_provider(&conn, SOURCE_FILE, "http://provider.example:8080");
+        let count: i64 = conn.query_row("SELECT COUNT(*) FROM movies", [], |r| r.get(0)).unwrap();
+        assert_eq!(count, 1);
+        // Aucune donnée perso créée dans le fichier de la source
+        let personal: i64 = conn
+            .query_row("SELECT COUNT(*) FROM sqlite_master WHERE name IN ('playback_progress', 'watchlist', 'user_preferences')", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(personal, 0);
+        // Même adresse : l'actualisation continue ; autre adresse : elle s'arrête, sans mêler deux fournisseurs
+        assert!(crate::catalog_refresh::check_provider(&conn, "http://provider.example:8080").is_ok());
+        assert!(crate::catalog_refresh::check_provider(&conn, "http://other.example").is_err());
+        drop(conn);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn the_account_base_keeps_its_address_written_by_the_page() {
+        let (path, conn) = temp_db("account-provider");
+        conn.execute_batch("CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT);").unwrap();
+        crate::catalog_refresh::meta_set(&conn, "lastProvider", "http://provider.example/").unwrap();
+        note_source_provider(&conn, "nyxplayer_550e8400-e29b-41d4-a716-446655440000.db", "http://provider.example:80");
+        assert_eq!(
+            crate::catalog_refresh::meta_get(&conn, "lastProvider").unwrap().as_deref(),
+            Some("http://provider.example/")
+        );
         drop(conn);
         let _ = std::fs::remove_file(&path);
     }

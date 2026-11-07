@@ -19,6 +19,14 @@ import { getDnsProvider } from './preferencesService';
 export const iptvFetch = (url: string) =>
   invoke<string>('iptv_fetch', { url, dnsProvider: getDnsProvider() });
 
+/**
+ * Comme iptvFetch, pour une adresse reçue d'un autre appareil (connexion de la TV par QR code) :
+ * seules les adresses publiques sont jointes, redirections comprises. Une adresse du réseau local
+ * échoue comme un serveur injoignable, sans qu'aucune connexion n'y soit ouverte.
+ */
+export const iptvFetchPublic = (url: string) =>
+  invoke<string>('iptv_fetch_public', { url, dnsProvider: getDnsProvider() });
+
 /** Début de l'erreur rendue par `iptv_fetch` quand le serveur du fournisseur répond 5xx (Rust, `ingestion.rs`). */
 const PROVIDER_SERVER_ERROR = 'provider_server_error';
 /** Début de l'erreur rendue par `iptv_fetch` quand le serveur est injoignable : délai dépassé,
