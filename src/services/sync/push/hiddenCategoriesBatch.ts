@@ -11,6 +11,7 @@ import { afterSend } from './afterSend';
 import { createLogger } from '../../../utils/logger';
 import { fitsCloudProviderId } from '../cloudLimits';
 import { isCloudLimitRefusal, noteCloudRefusal } from '../cloudRefusal';
+import { providerSyncScope, localKey, itemKeyOf, ownedRowHashes } from '../providerSync';
 
 const log = createLogger('Sync');
 
@@ -35,15 +36,25 @@ export async function batchSyncHiddenCategoriesToCloud(
   allCategoryIds: string[]
 ): Promise<boolean> {
   if (!canSync()) return true; // pas de sync possible = pas d'erreur
+  // Tables par fournisseur et fournisseur de l'appareil inconnu : rien n'est envoyé, la synchro
+  // suivante s'en charge (jamais rangé chez un autre fournisseur)
+  const scope = providerSyncScope('hidden');
+  if (!scope) {
+    log.warn(`batchSync hidden categories (${categoryType}): provider of this device unknown, not sent`);
+    return true;
+  }
+  const key = (id: string) => localKey(scope, `${id}::${categoryType}`);
+  const onConflict = scope.on ? 'user_id,provider_hash,category_id,category_type' : 'user_id,category_id,category_type';
   // Numéro démesuré : gardé sur l'appareil, jamais envoyé (la base le refuserait et bloquerait tout
   // l'envoi). Il ne compte pas non plus dans l'ensemble voulu côté cloud.
   const categoryIds = allCategoryIds.filter(fitsCloudProviderId);
 
   const userId = getCurrentSyncUserId()!;
-  const generation = currentGeneration('hidden');
+  const generation = currentGeneration(scope.baselineScope);
   const totalChunks = Math.ceil(categoryIds.length / HIDDEN_SYNC_CHUNK_SIZE);
-  // Empreinte du fournisseur notée sur chaque ligne : sync/syncPurge.ts
-  const providerHash = getLastProviderHash();
+  // Empreinte du fournisseur notée sur chaque ligne : celle de l'appareil (tables par fournisseur),
+  // sinon sync/syncPurge.ts
+  const providerHash = scope.on ? scope.deviceHash : getLastProviderHash();
 
   devLog('sync', `batchSync START: type=${categoryType}, total=${categoryIds.length}, chunks=${totalChunks}`);
 
@@ -62,15 +73,15 @@ export async function batchSyncHiddenCategoriesToCloud(
       devLog('sync', `UPSERT chunk ${chunkIndex}/${totalChunks} (${chunk.length} rows)`);
 
       let { error } = await supabase
-        .from('user_hidden_categories')
-        .upsert(rows, { onConflict: 'user_id,category_id,category_type' });
+        .from(scope.table)
+        .upsert(rows, { onConflict });
 
       // Retry 1 fois si échec
       if (error) {
         log.warn(`Chunk ${chunkIndex} failed, retrying...`, error.message);
         ({ error } = await supabase
-          .from('user_hidden_categories')
-          .upsert(rows, { onConflict: 'user_id,category_id,category_type' }));
+          .from(scope.table)
+          .upsert(rows, { onConflict }));
 
         if (error) {
           if (isCloudLimitRefusal(error)) noteCloudRefusal();
@@ -81,21 +92,26 @@ export async function batchSyncHiddenCategoriesToCloud(
     }
 
     devLog('sync', `All ${totalChunks} UPSERT chunks succeeded for ${categoryType}`);
-    await afterSend(userId, 'hidden', generation, { set: categoryIds.map((id) => [`${id}::${categoryType}`, 0] as [string, number]) });
+    await afterSend(userId, scope.baselineScope, generation, { set: categoryIds.map((id) => [key(id), 0] as [string, number]) });
 
     // === PHASE 2 : DELETE orphelins (nettoyer après) ===
     if (categoryIds.length === 0) {
       // Tout démasqué → supprimer tout pour ce type
-      const { error } = await supabase
-        .from('user_hidden_categories')
+      let request = supabase
+        .from(scope.table)
         .delete()
         .eq('user_id', userId)
         .eq('category_type', categoryType);
+      // Ses lignes seulement, copie sans empreinte comprise (sync/providerSync.ts)
+      if (scope.on) request = request.in('provider_hash', ownedRowHashes(scope));
+      const { error } = await request;
 
       if (error) {
         log.warn(`Delete all hidden (${categoryType}) failed:`, error.message);
       } else {
-        await afterSend(userId, 'hidden', generation, { removeWhere: (key) => key.endsWith(`::${categoryType}`) });
+        await afterSend(userId, scope.baselineScope, generation, {
+          removeWhere: (baselineKey) => itemKeyOf(scope, baselineKey)?.endsWith(`::${categoryType}`) ?? false,
+        });
       }
     } else {
       // Récupérer TOUS les IDs cloud actuels (pas de limite PostgREST)
@@ -105,12 +121,13 @@ export async function batchSyncHiddenCategoriesToCloud(
 
       // Pagination pour éviter la limite de 1000 rows par défaut de PostgREST
       while (true) {
-        const { data: page, error: selectError } = await supabase
-          .from('user_hidden_categories')
+        let pageQuery = supabase
+          .from(scope.table)
           .select('category_id')
           .eq('user_id', userId)
-          .eq('category_type', categoryType)
-          .range(from, from + PAGE_SIZE - 1);
+          .eq('category_type', categoryType);
+        if (scope.on) pageQuery = pageQuery.in('provider_hash', ownedRowHashes(scope)).order('provider_hash').order('category_id');
+        const { data: page, error: selectError } = await pageQuery.range(from, from + PAGE_SIZE - 1);
 
         if (selectError || !page) break;
         allCloudIds = allCloudIds.concat(page.map((r) => r.category_id as string));
@@ -128,15 +145,17 @@ export async function batchSyncHiddenCategoriesToCloud(
         // DELETE orphelins par chunks (évite les limites URL PostgREST)
         for (let i = 0; i < toDelete.length; i += HIDDEN_SYNC_CHUNK_SIZE) {
           const chunk = toDelete.slice(i, i + HIDDEN_SYNC_CHUNK_SIZE);
-          const { error: deleteError } = await supabase
-            .from('user_hidden_categories')
+          let deleteRequest = supabase
+            .from(scope.table)
             .delete()
             .eq('user_id', userId)
             .eq('category_type', categoryType)
             .in('category_id', chunk);
+          if (scope.on) deleteRequest = deleteRequest.in('provider_hash', ownedRowHashes(scope));
+          const { error: deleteError } = await deleteRequest;
           // Retrait raté : ces catégories restent dans le dernier accord, la synchro suivante les retire
           if (!deleteError) {
-            await afterSend(userId, 'hidden', generation, { remove: chunk.map((id) => `${id}::${categoryType}`) });
+            await afterSend(userId, scope.baselineScope, generation, { remove: chunk.map(key) });
           }
         }
       }

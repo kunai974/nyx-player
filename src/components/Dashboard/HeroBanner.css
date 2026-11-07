@@ -247,10 +247,12 @@
   border: none;
 }
 
-.btn-hero-play:hover {
-  background-color: white;
-  transform: translateY(-2px);
-  box-shadow: 0 10px 20px rgba(255, 255, 255, 0.1);
+@media (hover: hover) {
+  .btn-hero-play:hover {
+    background-color: white;
+    transform: translateY(-2px);
+    box-shadow: 0 10px 20px rgba(255, 255, 255, 0.1);
+  }
 }
 
 .btn-hero-info {
@@ -258,11 +260,13 @@
   color: white;
 }
 
-.btn-hero-info:hover {
-  background-color: rgba(255, 255, 255, 0.15);
-  border-color: rgba(255, 255, 255, 0.4);
-  transform: translateY(-2px);
-  box-shadow: 0 10px 20px rgba(0, 0, 0, 0.2);
+@media (hover: hover) {
+  .btn-hero-info:hover {
+    background-color: rgba(255, 255, 255, 0.15);
+    border-color: rgba(255, 255, 255, 0.4);
+    transform: translateY(-2px);
+    box-shadow: 0 10px 20px rgba(0, 0, 0, 0.2);
+  }
 }
 
 /* Hero watchlist — uses WatchlistButton component, minimal overrides only */
@@ -344,9 +348,11 @@
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
 }
 
-.hero-dot:hover {
-  background: rgba(255, 255, 255, 0.7);
-  transform: scale(1.2);
+@media (hover: hover) {
+  .hero-dot:hover {
+    background: rgba(255, 255, 255, 0.7);
+    transform: scale(1.2);
+  }
 }
 
 .hero-dot.active {

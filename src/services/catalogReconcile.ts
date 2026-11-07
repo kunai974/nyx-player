@@ -29,6 +29,7 @@ import { pushWatchlistUpdates } from './syncService';
 import { relinkWatchlistStreamIds } from './watchlistRelinking';
 import { devLog } from '../utils/devLog';
 import { createLogger } from '../utils/logger';
+import { rememberCurrentCatalog } from './titleTmdbLinkStore';
 
 const log = createLogger('Catalog');
 
@@ -141,6 +142,8 @@ export function applyRefreshedCatalog(
   setLightIndexes: (indexes: LightIndexes) => void,
 ): void {
   setLightIndexes(prepared.indexes);
+  // Catalogue à l'écran : les fiches trouvées par le titre y posent leurs liens
+  rememberCurrentCatalog(prepared.indexes);
   installDashboardRematch(prepared.dashboard);
   // « Ma liste » relue avec le nouveau catalogue (re-liée en base pendant la préparation, sans
   // prévenir l'écran ; ou lors d'une préparation abandonnée avant celle-ci)

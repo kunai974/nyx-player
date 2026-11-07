@@ -1,0 +1,57 @@
+{
+  "_notice": "Fournisseur farfelu : chaque titre est un piège vu chez de vrais fournisseurs. Aucun ne doit disparaître : il doit être visible dans une catégorie (au besoin « Autres » ou « Sans catégorie ») et trouvable par la recherche. Liste des pièges : README.md, section « Fournisseur farfelu ».",
+  "get_live_categories": [
+    { "category_id": "900", "category_name": "Chaînes normales", "parent_id": 0 },
+    { "category_id": 901, "category_name": "", "parent_id": 0 }
+  ],
+  "get_vod_categories": [
+    { "category_id": "900", "category_name": "Films normaux", "parent_id": 0 },
+    { "category_id": "902", "category_name": null, "parent_id": 0 },
+    { "category_id": "903", "category_name": "Films sans TMDB", "parent_id": 0 }
+  ],
+  "get_series_categories": [
+    { "category_id": "900", "category_name": "Séries normales", "parent_id": 0 }
+  ],
+  "get_live_streams": [
+    { "num": 1, "stream_id": 9001, "name": "FR| Piège chaîne normale", "stream_icon": "{BASE}/images/piege-9001.png", "epg_channel_id": "piege.fr", "category_id": "900" },
+    { "num": 2, "stream_id": 9002, "name": "Piège chaîne sans catégorie", "stream_icon": "", "epg_channel_id": null, "category_id": null },
+    { "num": 3, "stream_id": 9003, "name": "Piège chaîne catégorie inconnue", "stream_icon": "", "category_id": "777" },
+    { "num": 4, "stream_id": 9004, "name": "Piège chaîne catégorie sans nom", "category_id": 901 },
+    { "num": 5, "stream_id": 9005, "name": "[FR]", "category_id": "900" },
+    { "num": 6, "stream_id": 9006, "name": "AR| قناة الفخ", "category_id": "900" },
+    { "num": 7, "stream_id": 9007, "name": "Piège chaîne affiche en liste", "stream_icon": [], "epg_channel_id": ["piege.list"], "category_id": "900" },
+    { "num": 8, "stream_id": "9008.0", "name": "Piège chaîne numéro à virgule", "category_id": "900" },
+    { "num": 9, "stream_id": "9009", "name": "Piège chaîne numéro en texte", "category_id": "900" },
+    { "num": 10, "stream_id": 9010, "name": "Piège chaîne catégorie objet", "category_id": { "id": 900 } }
+  ],
+  "get_vod_streams": [
+    { "num": 1, "stream_id": 9101, "name": "Piège film normal", "stream_icon": "{BASE}/images/piege-9101.png", "tmdb": "603", "rating": "7.5", "category_id": "900", "container_extension": "mp4" },
+    { "num": 2, "stream_id": 9102, "name": "Piège film sans TMDB", "stream_icon": "", "category_id": "903", "container_extension": "mkv" },
+    { "num": 3, "stream_id": 9103, "name": "Piège film sans catégorie", "category_id": null, "container_extension": "mp4" },
+    { "num": 4, "stream_id": 9104, "name": "Piège film catégorie inconnue", "category_id": "778" },
+    { "num": 5, "stream_id": 9105, "name": "Piège film catégorie sans nom", "category_id": "902" },
+    { "num": 6, "stream_id": 9106, "name": "Piège film note en nombre", "rating": 6.8, "rating_5based": 3.4, "category_id": "900" },
+    { "num": 7, "stream_id": 9107, "name": "Piège film sans extension", "category_id": "900" },
+    { "num": 8, "stream_id": 9108, "name": "Кино ловушка 2024", "category_id": "903" },
+    { "num": 9, "stream_id": 9109, "name": "فيلم الفخ", "category_id": "903" },
+    { "num": 10, "stream_id": 9110, "name": "Cœur piégé", "category_id": "903" },
+    { "num": 11, "stream_id": 9111, "name": "Kırmızı Tuzak", "category_id": "903" },
+    { "num": 12, "stream_id": 9112, "name": "Ελληνική παγίδα", "category_id": "903" },
+    { "num": 13, "stream_id": 9113, "name": "罠の映画", "category_id": "903" },
+    { "num": 14, "stream_id": 9114, "name": "Piège film affiche en objet", "stream_icon": {}, "added": [], "category_id": "900" },
+    { "num": 15, "stream_id": 9115.0, "name": "Piège film numéro à virgule", "category_id": "900" },
+    { "num": 16, "stream_id": 9116, "name": "Piège film TMDB zéro", "tmdb": "0", "category_id": "900" },
+    { "num": 17, "stream_id": 9117, "name": "Piège film TMDB en liste", "tmdb": [], "category_id": "900" },
+    { "num": 18, "stream_id": 9118, "name": "Piège film catégorie en nombre", "category_id": 903 },
+    { "num": 19, "stream_id": 9119, "name": "Straße der Falle", "category_id": "903" }
+  ],
+  "get_series": [
+    { "num": 1, "series_id": 9201, "name": "Piège série normale", "cover": "{BASE}/images/piege-9201.png", "tmdb": "1396", "category_id": "900", "last_modified": "1700000000", "rating": "8" },
+    { "num": 2, "series_id": 9202, "name": "Piège série sans TMDB", "cover": "", "category_id": "900", "rating": 7 },
+    { "num": 3, "series_id": 9203, "name": "Piège série sans catégorie", "category_id": null },
+    { "num": 4, "series_id": 9204, "name": "Piège série catégorie inconnue", "category_id": "779" },
+    { "num": 5, "series_id": 9205, "name": "Сериал ловушка", "category_id": "900" },
+    { "num": 6, "series_id": 9206, "name": "Piège série image de fond vide", "backdrop_path": "", "category_id": "900" },
+    { "num": 7, "series_id": 9207, "name": "Piège série affiche en liste", "cover": [], "backdrop_path": [], "category_id": "900" }
+  ]
+}

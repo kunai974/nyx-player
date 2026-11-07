@@ -19,13 +19,19 @@ use regex::Regex;
 #[cfg_attr(mobile, allow(dead_code))]
 pub const VAULT_SERVICE: &str = if cfg!(feature = "audit") { "nyxplayer-audit" } else { "nyxplayer" };
 
-/// Accepte seulement les comptes de Nyx : `iptv_credentials` (aucun utilisateur connecté) ou
-/// `iptv_credentials_<uuid>` (identifiant Supabase en minuscules, forme 8-4-4-4-12).
+/// Accepte seulement les comptes de Nyx : `iptv_credentials` (aucun utilisateur connecté),
+/// `iptv_credentials_<uuid>` (identifiant Supabase en minuscules, forme 8-4-4-4-12), ou l'entrée
+/// d'une source `iptv_source_<espace>_<uuid de la source>`, l'espace étant l'uuid d'un compte
+/// Supabase ou d'un invité (même forme). Rien d'autre : ni point, ni majuscule, ni chemin.
 #[cfg_attr(mobile, allow(dead_code))]
 pub fn validate_vault_user(user: &str) -> Result<(), String> {
     static RE: OnceLock<Regex> = OnceLock::new();
     let re = RE.get_or_init(|| {
-        Regex::new(r"^iptv_credentials(?:_[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})?$").unwrap()
+        const UUID: &str = "[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}";
+        Regex::new(&format!(
+            r"^(?:iptv_credentials(?:_{UUID})?|iptv_source_{UUID}_{UUID})$"
+        ))
+        .unwrap()
     });
     if !re.is_match(user) {
         return Err("Compte du coffre refusé".to_string());
@@ -66,11 +72,22 @@ pub async fn nyx_secret_set(user: String, value: String) -> Result<(), String> {
     }
 }
 
+/// Entrée déjà absente : rien à effacer, ce n'est pas un échec (une source supprimée efface sa
+/// ligne seulement si l'entrée est partie) ; une vraie panne du coffre remonte.
+/// Bureau seulement : la crate keyring n'est pas une dépendance d'Android ni d'iOS (Cargo.toml).
+#[cfg(desktop)]
+fn deletion_outcome(result: keyring::Result<()>) -> Result<(), String> {
+    match result {
+        Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
+        Err(e) => Err(e.to_string()),
+    }
+}
+
 #[tauri::command]
 pub async fn nyx_secret_delete(user: String) -> Result<(), String> {
     #[cfg(desktop)]
     {
-        entry(&user)?.delete_credential().map_err(|e| e.to_string())
+        deletion_outcome(entry(&user)?.delete_credential())
     }
     #[cfg(mobile)]
     {
@@ -108,6 +125,44 @@ mod tests {
         ] {
             assert!(validate_vault_user(user).is_err(), "accepté à tort : {user:?}");
         }
+    }
+
+    const SOURCE: &str = "6a1e5c3b-9d2f-4e7a-b8c1-0d2e4f6a8b9c";
+
+    #[test]
+    fn accepts_source_entries_of_a_space() {
+        // Compte ou invité : même forme d'identifiant d'espace (services/localSpace.ts)
+        assert!(validate_vault_user(&format!("iptv_source_{UID}_{SOURCE}")).is_ok());
+    }
+
+    #[test]
+    fn rejects_malformed_source_entries() {
+        for user in [
+            format!("iptv_source_{UID}"),
+            format!("iptv_source_{UID}_"),
+            format!("iptv_source__{SOURCE}"),
+            format!("iptv_source_{UID}_{SOURCE}.nyxplayer"),
+            format!("iptv_source_{UID}_{SOURCE}\n"),
+            format!("iptv_source_{UID}_{}", SOURCE.to_uppercase()),
+            format!("iptv_source_guest_{UID}_{SOURCE}"),
+            format!("iptv_source_guest-{UID}_{SOURCE}"),
+            format!("iptv_source_guest-{UID}-x_{SOURCE}"),
+            format!("iptv_source_{UID}_{SOURCE}_{SOURCE}"),
+            format!("iptv_credentials_{UID}_{SOURCE}"),
+            format!("x_iptv_source_{UID}_{SOURCE}"),
+            format!("iptv_source_../{UID}_{SOURCE}"),
+        ] {
+            assert!(validate_vault_user(&user).is_err(), "accepté à tort : {user:?}");
+        }
+    }
+
+    #[cfg(desktop)]
+    #[test]
+    fn deleting_a_missing_entry_succeeds_but_a_vault_failure_is_reported() {
+        assert_eq!(deletion_outcome(Ok(())), Ok(()));
+        assert_eq!(deletion_outcome(Err(keyring::Error::NoEntry)), Ok(()));
+        assert!(deletion_outcome(Err(keyring::Error::PlatformFailure("coffre verrouillé".into()))).is_err());
+        assert!(deletion_outcome(Err(keyring::Error::NoStorageAccess("refusé".into()))).is_err());
     }
 
     #[test]

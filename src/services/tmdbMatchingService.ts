@@ -18,9 +18,9 @@
 
 import type { LightIndexes } from '../types/lightIndex';
 import { getIconUrl } from '../types/lightIndex';
-import type { TmdbTrendingResult } from '../types/tmdb';
+import type { TmdbMovieDetails, TmdbTrendingResult } from '../types/tmdb';
 import tmdb from './tmdbApi';
-import { getCachedList, setCachedList } from './tmdbCacheSqlite';
+import { cacheMovieDetails, getCachedDetails, getCachedList, setCachedList } from './tmdbCacheSqlite';
 import type { HeroMovie } from '../types/dashboard';
 import { getTmdbLanguage } from '../utils/tmdbLanguage';
 import { pickBestLogo } from '../utils/tmdbLogoHelper';
@@ -311,7 +311,7 @@ export function buildHeroCandidates(
 
 /**
  * Construit les films Hero à partir de données trending existantes.
- * Fetche les logos officiels TMDB en parallèle (cachés 7j proxy + SQLite client).
+ * Ajoute les logos officiels TMDB en parallèle (fiches gardées sur l'appareil).
  *
  * @param trendingItems - Données trending déjà fetchées (TrendingItem[])
  * @param lightIndexes - LightIndexes pour lookup O(1)
@@ -331,6 +331,7 @@ export async function buildHeroFromTrendingItems(
   // aucun film n'a d'image de fond et la bannière reste vide alors que la rangée est remplie.
   const cachedTrending = (await getCachedList<TmdbTrendingResult>('trending'))
     ?? (await readTmdbList('trending', true).catch(() => null));
+  if (import.meta.env.VITE_BANC === '1') await tmdb.prepareBancImages();
   const preliminary = buildHeroCandidates(trendingItems, lightIndexes, cachedTrending, count);
 
   // Phase 2: logos
@@ -338,15 +339,30 @@ export async function buildHeroFromTrendingItems(
 }
 
 /**
- * Ajoute le logo officiel TMDB aux films de la bannière, en parallèle (réseau, caché 7 j proxy +
- * SQLite client). Un échec laisse le film sans logo : le titre s'affiche à la place.
+ * Fiche d'un film de la bannière : celle déjà gardée sur l'appareil si elle a ses images, sinon
+ * demandée puis gardée. Sans ce cache, chaque arrivée sur l'accueil redemandait les 5 fiches.
+ */
+async function heroMovieDetails(tmdbId: number): Promise<TmdbMovieDetails> {
+  const cached = await getCachedDetails<TmdbMovieDetails>(tmdbId, 'movie');
+  // Sans logo (sortie récente : TMDB l'ajoute plus tard) : redemandée, pour le trouver dès qu'il existe
+  if (cached?.images?.logos?.length) return cached;
+  const lang = getTmdbLanguage();
+  const data = await tmdb.getMovieDetails(tmdbId);
+  // Langue changée pendant la demande : ne pas garder une fiche dans l'ancienne langue
+  if (getTmdbLanguage() === lang) await cacheMovieDetails(tmdbId, data, { notify: false });
+  return data;
+}
+
+/**
+ * Ajoute le logo officiel TMDB aux films de la bannière, en parallèle (fiche gardée sur l'appareil,
+ * sinon réseau). Un échec laisse le film sans logo : le titre s'affiche à la place.
  */
 export async function attachHeroLogos(
   heroes: ReadonlyArray<HeroMovie & { tmdbId: number }>
 ): Promise<HeroMovie[]> {
   const userLang = getTmdbLanguage() === 'fr-FR' ? 'fr' : 'en';
   const logoResults = await Promise.allSettled(
-    heroes.map(({ tmdbId }) => tmdb.getMovieDetails(tmdbId))
+    heroes.map(({ tmdbId }) => heroMovieDetails(tmdbId))
   );
 
   return heroes.map((hero, i) => {

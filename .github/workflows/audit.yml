@@ -54,7 +54,7 @@ jobs:
       # packageManager) échouait faute de dossier pnpm à sauvegarder.
       - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
         with:
-          node-version: 20
+          node-version: 22
           package-manager-cache: false
 
       # Dépendances de l'app livrée seulement (pas les outils de développement) ; pas d'installation

@@ -8,6 +8,7 @@ import {
 import type { AppSeriesInfo } from '../types/xtream';
 import type { IptvSeries } from '../types/iptv';
 import { normalizeTmdbId } from '../utils/normalizeTmdb';
+import { findTitleTmdbId } from '../services/titleTmdbLookup';
 import { getTmdbLanguage } from '../utils/tmdbLanguage';
 import type { TmdbTvDetails, TmdbEpisode } from '../types/tmdb';
 import { TMDB_LANGUAGE_EVENT } from '../services/eventConstants';
@@ -118,8 +119,8 @@ export const useTmdbSeries = (
 
   // =========================================================================
   // EFFECT 1: Resolve TMDB ID and fetch Series Details
-  // PHASE C3: Title matching REMOVED - only uses TMDB ID from provider
-  // If tmdb_id = 0 → fallback direct to Xtream data (lightIndex)
+  // Numéro TMDB du fournisseur seulement ; si absent : recherche par le titre pour une liste M3U
+  // (lien sûr ou rien), sinon fiche du fournisseur (lightIndex)
   // =========================================================================
   useEffect(() => {
     // Skip if already have details from cache
@@ -129,18 +130,13 @@ export const useTmdbSeries = (
       return;
     }
 
-    // Get ID from props (NO title matching - only provider ID)
+    // Numéro TMDB donné par le fournisseur ; sans lui, une série de liste M3U est cherchée par son
+    // titre (m3uTmdbLinks.ts) ; une série Xtream sans numéro garde la fiche du fournisseur
     const id = getInitialTmdbId();
-    
-    // No TMDB ID from provider → fallback immediately
-    if (!id || id === 0) {
-      transitionToState('fallback');
-      return;
-    }
 
     let mounted = true;
 
-    const fetchDetails = async () => {
+    const fetchDetails = async (id: number) => {
       if (!series) return;
       setError(null);
       setTmdbId(id);
@@ -189,7 +185,15 @@ export const useTmdbSeries = (
       }
     };
 
-    void fetchDetails();
+    if (id && id > 0) {
+      void fetchDetails(id);
+    } else {
+      void findTitleTmdbId('series', Number(series?.series_id)).then((found) => {
+        if (!mounted) return;
+        if (found > 0) void fetchDetails(found);
+        else transitionToState('fallback');
+      });
+    }
 
     return () => {
       mounted = false;

@@ -126,8 +126,10 @@
   contain: layout style;
 }
 
-.guide-tv-grid__channel-cell:hover {
-  background: var(--hover-overlay);
+@media (hover: hover) {
+  .guide-tv-grid__channel-cell:hover {
+    background: var(--hover-overlay);
+  }
 }
 
 .guide-tv-grid__channel-logo {
@@ -185,9 +187,11 @@
               border-color var(--duration-fast) var(--ease-out);
 }
 
-.guide-program:hover {
-  background: var(--hover-overlay);
-  border-color: var(--border-strong);
+@media (hover: hover) {
+  .guide-program:hover {
+    background: var(--hover-overlay);
+    border-color: var(--border-strong);
+  }
 }
 
 /* Programme en cours — focus visuel */
@@ -196,8 +200,10 @@
   background: rgba(139, 92, 246, 0.08);
 }
 
-.guide-program--live:hover {
-  background: rgba(139, 92, 246, 0.14);
+@media (hover: hover) {
+  .guide-program--live:hover {
+    background: rgba(139, 92, 246, 0.14);
+  }
 }
 
 /* Titre du programme */

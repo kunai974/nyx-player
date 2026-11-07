@@ -17,13 +17,15 @@ vi.mock('../tmdbApi', () => ({
 vi.mock('../tmdbCacheSqlite', () => ({
   getCachedList: vi.fn(async () => null),
   setCachedList: vi.fn(async () => {}),
+  getCachedDetails: vi.fn(async () => null),
+  cacheMovieDetails: vi.fn(async () => {}),
 }));
 vi.mock('../../utils/tmdbLanguage', () => ({ getTmdbLanguage: vi.fn(() => 'fr-FR') }));
 vi.mock('../../utils/tmdbImageSize', () => ({ backdropImageSize: () => 'w1280' }));
 
-import { buildHeroCandidates, matchTmdbList, readTmdbList } from '../tmdbMatchingService';
+import { attachHeroLogos, buildHeroCandidates, matchTmdbList, readTmdbList } from '../tmdbMatchingService';
 import tmdb from '../tmdbApi';
-import { getCachedList, setCachedList } from '../tmdbCacheSqlite';
+import { cacheMovieDetails, getCachedDetails, getCachedList, setCachedList } from '../tmdbCacheSqlite';
 import { getTmdbLanguage } from '../../utils/tmdbLanguage';
 
 function indexes(movies: Array<[number, number]>, series: Array<[number, number]> = []): LightIndexes {
@@ -121,5 +123,50 @@ describe('readTmdbList', () => {
     vi.mocked(tmdb.getTrending).mockClear();
     expect(await readTmdbList('trending', true)).toEqual([movie(20)]);
     expect(tmdb.getTrending).not.toHaveBeenCalled();
+  });
+});
+
+describe('attachHeroLogos', () => {
+  const hero = (tmdbId: number) => ({ id: tmdbId, tmdbId, title: `Film ${tmdbId}`, overview: '', backdropUrl: '', rating: 7 });
+  const withLogo = { images: { logos: [{ file_path: '/logo.png', iso_639_1: 'fr', vote_average: 5, width: 500, height: 100, aspect_ratio: 5 }] } };
+
+  it('fiche déjà en cache sur l\'appareil : logo pris dedans, aucune demande (chaque lancement en refaisait 5)', async () => {
+    vi.mocked(getCachedDetails).mockResolvedValue(withLogo as never);
+    vi.mocked(tmdb.getMovieDetails).mockClear();
+    const [h] = await attachHeroLogos([hero(1)]);
+    expect(tmdb.getMovieDetails).not.toHaveBeenCalled();
+    expect(h.logoUrl).toBeTruthy();
+    vi.mocked(getCachedDetails).mockResolvedValue(null);
+  });
+
+  it('pas en cache : demandée une fois, puis gardée sur l\'appareil', async () => {
+    vi.mocked(getCachedDetails).mockResolvedValue(null);
+    vi.mocked(tmdb.getMovieDetails).mockResolvedValueOnce(withLogo as never);
+    vi.mocked(cacheMovieDetails).mockClear();
+    const [h] = await attachHeroLogos([hero(2)]);
+    expect(tmdb.getMovieDetails).toHaveBeenCalledWith(2);
+    expect(cacheMovieDetails).toHaveBeenCalledWith(2, withLogo, { notify: false });
+    expect(h.logoUrl).toBeTruthy();
+  });
+
+  it('fiche en cache sans logo (TMDB l\'ajoute plus tard) : redemandée', async () => {
+    vi.mocked(getCachedDetails).mockResolvedValue({ images: { logos: [] } } as never);
+    vi.mocked(tmdb.getMovieDetails).mockClear();
+    vi.mocked(tmdb.getMovieDetails).mockResolvedValueOnce(withLogo as never);
+    const [h] = await attachHeroLogos([hero(3)]);
+    expect(tmdb.getMovieDetails).toHaveBeenCalledWith(3);
+    expect(h.logoUrl).toBeTruthy();
+    vi.mocked(getCachedDetails).mockResolvedValue(null);
+  });
+
+  it('langue changée pendant la demande : fiche pas gardée dans l\'ancienne langue', async () => {
+    vi.mocked(getCachedDetails).mockResolvedValue(null);
+    vi.mocked(cacheMovieDetails).mockClear();
+    vi.mocked(tmdb.getMovieDetails).mockImplementationOnce(async () => {
+      vi.mocked(getTmdbLanguage).mockReturnValue('en-US');
+      return withLogo as never;
+    });
+    await attachHeroLogos([hero(4)]);
+    expect(cacheMovieDetails).not.toHaveBeenCalled();
   });
 });

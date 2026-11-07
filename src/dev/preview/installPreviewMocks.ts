@@ -274,6 +274,7 @@ export async function installPreviewMocks(): Promise<void> {
         if (String(args?.key ?? '').startsWith('supabase-auth::')) { authVault.delete(args.key); return null; }
         break;
       case 'iptv_fetch':
+      case 'iptv_fetch_public':
         return xtreamResponse(args.url);
       case 'cancel_catalog_ingestion':
         return null;

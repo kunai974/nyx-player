@@ -403,6 +403,8 @@ const PlayerControls: React.FC<PlayerControlsProps> = ({
            currentlyPlaying={currentlyPlaying}
            forceSkeletonLoading={pc.forceEpisodeSkeleton}
            onPlayEpisode={async (episode, series) => {
+             // Comme les boutons précédent/suivant : on enregistre la position de l'épisode quitté.
+             try { await savePlaybackPositionRef.current?.(); } catch { /* sans effet sur le lancement */ }
              await play(episode, series, 0, {
                  seriesId: series.series_id,
                  tmdbId: series.tmdb,

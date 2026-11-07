@@ -22,7 +22,6 @@ class SmoothnessPolicyTest {
         assertEquals(1.0, window.progress, 1e-9)
         assertEquals(0.0, window.dropRatio, 1e-9)
         assertFalse(window.bad)
-        assertFalse(window.fatal)
     }
 
     @Test
@@ -46,9 +45,6 @@ class SmoothnessPolicyTest {
         val bad = SmoothnessPolicy.judge(start, after(6.0, drops = 30), 1.0, 25.0)!!
         assertEquals(0.2, bad.dropRatio, 1e-9)
         assertTrue(bad.bad)
-        assertFalse(bad.fatal)
-        // 90 perdues = 60 % : très mauvaise
-        assertTrue(SmoothnessPolicy.judge(start, after(6.0, drops = 90), 1.0, 25.0)!!.fatal)
         // Presque pas de lecture : la part d'images perdues ne veut rien dire
         assertEquals(0.0, SmoothnessPolicy.judge(start, after(0.5, drops = 90), 1.0, 25.0)!!.dropRatio, 0.0)
     }
@@ -59,9 +55,6 @@ class SmoothnessPolicyTest {
         val slow = SmoothnessPolicy.judge(start, after(4.8), 1.0, 25.0)!!
         assertEquals(0.8, slow.progress, 1e-9)
         assertTrue(slow.bad)
-        assertFalse(slow.fatal)
-        // 2,4 s en 6 s = 40 % : très mauvaise
-        assertTrue(SmoothnessPolicy.judge(start, after(2.4), 1.0, 25.0)!!.fatal)
     }
 
     @Test
@@ -82,19 +75,17 @@ class SmoothnessPolicyTest {
         fun at(wallMs: Long, played: Double, drops: Long = 0) = Sample(drops, played, wallMs, 0, true)
         // 2 s pile : la fenêtre se juge
         assertNotNull(SmoothnessPolicy.judge(zero, at(2_000, 2.0), 1.0, 25.0))
-        // 6 s à 20 images/s = 120 images : 18 perdues = 15 % pile, pas encore mauvais ; 60 = 50 %, pas encore très mauvais
+        // 6 s à 20 images/s = 120 images : 18 perdues = 15 % pile, pas encore mauvais ; 60 = 50 %, mauvais
         val dropsAtBad = SmoothnessPolicy.judge(zero, at(6_000, 6.0, drops = 18), 1.0, 20.0)!!
         assertEquals(0.15, dropsAtBad.dropRatio, 0.0)
         assertFalse(dropsAtBad.bad)
         val dropsAtFatal = SmoothnessPolicy.judge(zero, at(6_000, 6.0, drops = 60), 1.0, 20.0)!!
         assertTrue(dropsAtFatal.bad)
-        assertFalse(dropsAtFatal.fatal)
-        // 85 % pile de la vitesse : pas mauvais ; 50 % pile : mauvais, pas très mauvais
+        // 85 % pile de la vitesse : pas mauvais ; 50 % pile : mauvais
         assertFalse(SmoothnessPolicy.judge(zero, at(10_000, 8.5), 1.0, 25.0)!!.bad)
         val halfSpeed = SmoothnessPolicy.judge(zero, at(10_000, 5.0), 1.0, 25.0)!!
         assertEquals(0.5, halfSpeed.progress, 0.0)
         assertTrue(halfSpeed.bad)
-        assertFalse(halfSpeed.fatal)
     }
 
     @Test
@@ -103,23 +94,58 @@ class SmoothnessPolicyTest {
         val window = SmoothnessPolicy.judge(start.copy(audioTrouble = 4), after(6.0, audio = 7), 1.0, 25.0)!!
         assertEquals(3, window.audioTrouble)
         assertTrue(window.bad)
-        assertFalse(window.fatal)
     }
 
     @Test
-    fun `deux mauvaises fenêtres de suite ou une très mauvaise`() {
+    fun `deux mauvaises fenêtres de suite`() {
         val good = Window(progress = 1.0, dropRatio = 0.0, audioTrouble = 0)
         val bad = Window(progress = 0.8, dropRatio = 0.0, audioTrouble = 0)
-        val fatal = Window(progress = 0.4, dropRatio = 0.0, audioTrouble = 0)
 
         assertEquals(1, SmoothnessPolicy.badWindowsAfter(bad, 0))
-        assertFalse(SmoothnessPolicy.tooSlow(bad, 1))
+        assertFalse(SmoothnessPolicy.tooSlow(1))
         assertEquals(2, SmoothnessPolicy.badWindowsAfter(bad, 1))
-        assertTrue(SmoothnessPolicy.tooSlow(bad, 2))
+        assertTrue(SmoothnessPolicy.tooSlow(2))
         // Une bonne fenêtre remet le compte à zéro
         assertEquals(0, SmoothnessPolicy.badWindowsAfter(good, 1))
-        assertFalse(SmoothnessPolicy.tooSlow(good, 0))
-        assertTrue(SmoothnessPolicy.tooSlow(fatal, SmoothnessPolicy.badWindowsAfter(fatal, 0)))
+        assertFalse(SmoothnessPolicy.tooSlow(0))
+    }
+
+    @Test
+    fun `zapping - une fenêtre isolée très saccadée ne déclenche pas l'alerte, même au processeur`() {
+        // Chaîne en direct (H264 720p en matériel, ou MPEG-2 SD au processeur) : une fenêtre très
+        // saccadée pendant que le panneau de zapping charge l'interface, puis la lecture redevient fluide
+        val veryBad = Window(progress = 0.4, dropRatio = 0.6, audioTrouble = 3)
+        val good = Window(progress = 1.0, dropRatio = 0.0, audioTrouble = 0)
+        val afterVeryBad = SmoothnessPolicy.badWindowsAfter(veryBad, 0)
+        assertFalse(SmoothnessPolicy.tooSlow(afterVeryBad))
+        assertFalse(SmoothnessPolicy.tooSlow(SmoothnessPolicy.badWindowsAfter(good, afterVeryBad)))
+        // Elle continue de saccader à la fenêtre suivante : là, l'alerte se justifie
+        assertTrue(SmoothnessPolicy.tooSlow(SmoothnessPolicy.badWindowsAfter(veryBad, afterVeryBad)))
+    }
+
+    @Test
+    fun `le souvenir expire après 7 jours`() {
+        val day = 24L * 60 * 60 * 1000
+        val saved = 1_000_000_000_000L
+        assertTrue(SmoothnessPolicy.stillRemembered(saved, saved))
+        assertTrue(SmoothnessPolicy.stillRemembered(saved, saved + 7 * day))
+        assertFalse(SmoothnessPolicy.stillRemembered(saved, saved + 7 * day + 1))
+        // Horloge revenue en arrière, ou date illisible : souvenir expiré
+        assertFalse(SmoothnessPolicy.stillRemembered(saved, saved - 1))
+        assertFalse(SmoothnessPolicy.stillRemembered(0L, saved))
+    }
+
+    @Test
+    fun `seul un format décodé au processeur est retenu`() {
+        // Un format matériel retenu signalait chaque chaîne de ce format dès son lancement
+        assertFalse(SmoothnessPolicy.remembers("h264|sd|hw"))
+        assertFalse(SmoothnessPolicy.remembers(SmoothnessPolicy.formatSignature("h264", 720, "mediacodec", false)))
+        assertFalse(SmoothnessPolicy.remembers(SmoothnessPolicy.formatSignature("hevc", 2160, "mediacodec-copy", false)))
+        assertTrue(SmoothnessPolicy.remembers(SmoothnessPolicy.formatSignature("hevc", 2160, "no", dolbyVision = true)))
+        assertTrue(SmoothnessPolicy.remembers(SmoothnessPolicy.formatSignature("mpeg2video", 576, null, false)))
+        assertTrue(SmoothnessPolicy.isSoftwareDecoding(null))
+        assertTrue(SmoothnessPolicy.isSoftwareDecoding("no"))
+        assertFalse(SmoothnessPolicy.isSoftwareDecoding("mediacodec"))
     }
 
     @Test

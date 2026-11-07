@@ -31,6 +31,9 @@ vi.mock('../../services/contentPreferencesService', () => ({
 
 vi.mock('../../utils/devLog', () => ({ devLog: vi.fn() }));
 
+const lookup = vi.hoisted(() => ({ within: vi.fn(async (): Promise<number> => 0) }));
+vi.mock('../../services/titleTmdbLookup', () => ({ findTitleTmdbIdWithin: lookup.within }));
+
 import { useContentNavigation, cancelPendingOpen } from '../useContentNavigation';
 
 function movie(id: number, tmdbId: number): LightMovie {
@@ -73,6 +76,7 @@ beforeEach(() => {
     navigateToSeries.mockClear();
     details = new Map();
     lightIndexes = null;
+    lookup.within.mockReset().mockResolvedValue(0);
 });
 
 describe('navigateToContent', () => {
@@ -124,6 +128,54 @@ describe('navigateToContent', () => {
         await open('series', { tmdbId: 77, seriesId: 100 });
         expect(navigateToSeries).toHaveBeenCalledTimes(1);
         expect(navigateToSeries.mock.calls[0][0]).toMatchObject({ series_id: 700, tmdb: 77 });
+    });
+});
+
+describe('titles linked to TMDB by their name (provider without TMDB ids)', () => {
+    it('opens a title linked by its name with its TMDB card and all its versions', async () => {
+        // Base du fournisseur sans numéro ; lien trouvé par le titre, posé en mémoire seulement
+        lightIndexes = catalog([movie(100, 42), movie(101, 42), movie(102, 0)]);
+        addMovieDetail(100, 0);
+        await open('movie', { tmdbId: 0, streamId: 100 });
+        expect(navigateToMovie.mock.calls[0][0]).toBe(42);
+        expect(openedMovieIds()).toEqual([100, 101]);
+        expect(lookup.within).not.toHaveBeenCalled();
+    });
+
+    it('looks the TMDB id up at opening when nothing is known yet, then groups the versions', async () => {
+        lightIndexes = catalog([movie(100, 0), movie(101, 0)]);
+        addMovieDetail(100, 0);
+        lookup.within.mockImplementationOnce(async () => {
+            lightIndexes!.movies.get(100)!.tmdbId = 42;
+            lightIndexes!.movies.get(101)!.tmdbId = 42;
+            return 42;
+        });
+        await open('movie', { tmdbId: 0, streamId: 100 });
+        expect(lookup.within).toHaveBeenCalledWith('movie', 100, lightIndexes, expect.any(Number));
+        expect(navigateToMovie.mock.calls[0][0]).toBe(42);
+        expect(openedMovieIds()).toEqual([100, 101]);
+    });
+
+    it('gives the series card the TMDB id found by its name', async () => {
+        lightIndexes = catalog([], [series(700, 77)]);
+        details.set('series:700', { series_id: 700, name: 'La série', tmdb: null });
+        await open('series', { tmdbId: 0, seriesId: 700 });
+        expect(navigateToSeries.mock.calls[0][0]).toMatchObject({ series_id: 700, tmdb: 77 });
+    });
+});
+
+describe('carte regroupée sans numéro du fournisseur', () => {
+    it('series: the grouped card is looked up like a single one and the page receives the TMDB id found', async () => {
+        lightIndexes = catalog([], [series(700, 0), series(701, 0)]);
+        lookup.within.mockImplementationOnce(async () => 77);
+        const versions = [{ series_id: 700, name: 'A', tmdb: 0 }, { series_id: 701, name: 'B', tmdb: 0 }];
+        const { result } = renderHook(() => useContentNavigation());
+        await act(async () => {
+            await result.current.openSeries(versions[0] as never, versions as never);
+        });
+        expect(lookup.within).toHaveBeenCalledWith('series', 700, lightIndexes, expect.any(Number));
+        expect(navigateToSeries.mock.calls[0][0]).toMatchObject({ series_id: 700, tmdb: 77 });
+        expect(navigateToSeries.mock.calls[0][0].groupedVersions).toHaveLength(2);
     });
 });
 

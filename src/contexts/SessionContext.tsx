@@ -20,7 +20,10 @@
  * Phase 5 — Z1 App Orchestrator refactoring
  */
 
-import React, { createContext, useContext, useState, useMemo, useEffect, useCallback, type ReactNode } from 'react';
+import React, { createContext, useContext, useState, useMemo, useEffect, useCallback, type ReactNode, useRef } from 'react';
+import { uniqueTitleCount } from '../utils/lightIndexHelpers';
+import { titleLinkedEntryCounts } from '../services/titleTmdbLinkStore';
+import { WATCHLIST_EVENT } from '../services/eventConstants';
 import type { XtreamCredentials } from '../types/iptv';
 import type { XtreamUserInfo } from '../types/xtream';
 import type { LightIndexes } from '../types/lightIndex';
@@ -49,7 +52,7 @@ interface SessionProviderProps {
 
 export const SessionProvider: React.FC<SessionProviderProps> = ({ children }) => {
     const { t } = useTranslation(['common', 'auth']);
-    const { isDbReady } = useSupabaseAuth();
+    const { isDbReady, spaceKey } = useSupabaseAuth();
 
     // =========================================================================
     // STATE
@@ -65,6 +68,7 @@ export const SessionProvider: React.FC<SessionProviderProps> = ({ children }) =>
     const [accountInfo, setAccountInfo] = useState<XtreamUserInfo | null>(null);
     const [lightIndexes, setLightIndexes] = useState<LightIndexes | null>(null);
     const [lastIngestionPartial, setLastIngestionPartial] = useState(false);
+    const [linksTick, setLinksTick] = useState(0);
     const [homeTab, setHomeTab] = useState<TabType>('dashboard');
     // Phase 1.5 — Profile Selector
     const [activeProfileId, setActiveProfileId] = useState<string | null>(null);
@@ -131,6 +135,16 @@ export const SessionProvider: React.FC<SessionProviderProps> = ({ children }) =>
         };
     }, [isDbReady, savedCredsRef]);
 
+    // L'espace a changé sans déconnexion (invité remplacé par un compte qui revient) : la session IPTV et les
+    // identifiants de l'ancien espace sont fermés, jamais repris dans le nouveau
+    const lastSpaceKeyRef = useRef(spaceKey);
+    useEffect(() => {
+        if (lastSpaceKeyRef.current === spaceKey) return;
+        lastSpaceKeyRef.current = spaceKey;
+        savedCredsRef.current = null;
+        void logout();
+    }, [spaceKey, logout, savedCredsRef]);
+
     const isCheckingSavedSession = isDbReady && !savedSessionChecked;
 
     /** Effacer le message d'erreur session */
@@ -139,6 +153,28 @@ export const SessionProvider: React.FC<SessionProviderProps> = ({ children }) =>
     // =========================================================================
     // DERIVED STATE
     // =========================================================================
+
+    /** Des liens trouvés par le titre ont été posés : les taux des Réglages se recalculent (un seul passage par lot) */
+    useEffect(() => {
+        if (!lightIndexes) return undefined;
+        const total = () => { const c = titleLinkedEntryCounts(lightIndexes); return c.movies + c.series; };
+        let seen = total();
+        let timer: ReturnType<typeof setTimeout> | null = null;
+        // Les lots de liens se suivent pendant la recherche par titre : un seul recalcul toutes les 2 s au plus
+        const onLinks = () => {
+            if (timer !== null || total() === seen) return;
+            timer = setTimeout(() => {
+                timer = null;
+                seen = total();
+                setLinksTick((n) => n + 1);
+            }, 2000);
+        };
+        window.addEventListener(WATCHLIST_EVENT, onLinks);
+        return () => {
+            window.removeEventListener(WATCHLIST_EVENT, onLinks);
+            if (timer !== null) clearTimeout(timer);
+        };
+    }, [lightIndexes]);
 
     /** Stats pré-calculées pour SettingsPage */
     const settingsContentCounts = useMemo<SettingsContentCounts | undefined>(() => {
@@ -155,19 +191,25 @@ export const SessionProvider: React.FC<SessionProviderProps> = ({ children }) =>
 
         const moviesCount = lightIndexes.movies.size;
         const seriesCount = lightIndexes.series.size;
+        const byTitle = titleLinkedEntryCounts(lightIndexes);
+        const rate = (part: number, total: number) => (total > 0 ? Math.round((part / total) * 100) : 0);
 
         return {
             live: lightIndexes.live.size,
             movies: moviesCount,
             series: seriesCount,
-            uniqueMovies: lightIndexes.moviesByTmdb.size,
-            uniqueSeries: lightIndexes.seriesByTmdb.size,
+            uniqueMovies: uniqueTitleCount(lightIndexes.moviesByTmdb.size, tmdbMovies, moviesCount),
+            uniqueSeries: uniqueTitleCount(lightIndexes.seriesByTmdb.size, tmdbSeries, seriesCount),
             tmdbMovies,
             tmdbSeries,
-            tmdbMovieRate: moviesCount > 0 ? Math.round((tmdbMovies / moviesCount) * 100) : 0,
-            tmdbSeriesRate: seriesCount > 0 ? Math.round((tmdbSeries / seriesCount) * 100) : 0,
+            tmdbMovieRate: rate(tmdbMovies, moviesCount),
+            tmdbSeriesRate: rate(tmdbSeries, seriesCount),
+            tmdbMovieTitleRate: rate(Math.min(byTitle.movies, tmdbMovies), moviesCount),
+            tmdbSeriesTitleRate: rate(Math.min(byTitle.series, tmdbSeries), seriesCount),
         };
-    }, [lightIndexes]);
+    // linksTick : les liens trouvés par le titre arrivent après le chargement, sans nouveau catalogue
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- relance voulue du calcul quand des liens sont posés
+    }, [lightIndexes, linksTick]);
 
     /** Statut IPTV pour sidebar indicator */
     const iptvStatus = useMemo(

@@ -24,7 +24,7 @@ use crate::catalog_parser::{
     insert_categories, item_text, live_row, movie_row, normalize_category_id, open_connection, series_row,
     ListItem, XtreamCategory, XtreamLive, XtreamMovie, XtreamSeries,
 };
-use crate::storage::{get_data_dir, validate_db_name};
+use crate::storage::{catalog_db_path, get_data_dir, validate_catalog_db_name};
 use rusqlite::types::Value as SqlValue;
 use rusqlite::{params, Connection, ErrorCode, OptionalExtension, Transaction};
 use serde::Serialize;
@@ -524,13 +524,13 @@ where
 // NOTES « À FAIRE » (dans la même transaction que les écritures)
 // =============================================================================
 
-fn meta_get(conn: &Connection, key: &str) -> rusqlite::Result<Option<String>> {
+pub(crate) fn meta_get(conn: &Connection, key: &str) -> rusqlite::Result<Option<String>> {
     conn.query_row("SELECT value FROM meta WHERE key = ?1", params![key], |r| r.get::<_, Option<String>>(0))
         .optional()
         .map(Option::flatten)
 }
 
-fn meta_set(conn: &Connection, key: &str, value: &str) -> rusqlite::Result<()> {
+pub(crate) fn meta_set(conn: &Connection, key: &str, value: &str) -> rusqlite::Result<()> {
     conn.execute("INSERT OR REPLACE INTO meta (key, value) VALUES (?1, ?2)", params![key, value])
         .map(|_| ())
 }
@@ -779,7 +779,7 @@ fn write_ops(tx: &Transaction, kind: Kind, ops: &[Op]) -> rusqlite::Result<()> {
 
 /// Le fournisseur enregistré est toujours celui de l'actualisation (valeur absente = même
 /// fournisseur, comme la page). Sinon on mélangerait deux catalogues.
-fn check_provider(conn: &Connection, host: &str) -> Result<(), ApplyError> {
+pub(crate) fn check_provider(conn: &Connection, host: &str) -> Result<(), ApplyError> {
     match meta_get(conn, "lastProvider") {
         Ok(Some(p)) if p != host => Err(Stop::ProviderChanged.into()),
         Ok(_) => Ok(()),
@@ -986,11 +986,13 @@ pub fn apply_list_file(
 // CATÉGORIES
 // =============================================================================
 
-type CategoryTable = HashMap<String, (String, String, i64)>;
+/// (type, numéro) → (nom, rang)
+type CategoryTable = HashMap<(String, String), (String, i64)>;
 
-/// Compare le résultat que produirait l'écriture complète (trois listes fusionnées, la dernière
-/// gagne par numéro : la table n'a que le numéro pour clé) à la table actuelle. S'il diffère, les
-/// trois types sont réécrits dans une transaction, dans l'ordre de l'écriture complète. `None` =
+/// Compare le résultat que produirait l'écriture complète (trois listes, rangées par type et
+/// numéro : un fournisseur peut donner le même numéro à une catégorie de films et à une de
+/// chaînes) à la table actuelle. S'il diffère, les trois types sont réécrits dans une
+/// transaction, dans l'ordre de l'écriture complète. `None` =
 /// téléchargement en échec, liste vide = type gardé (garde-fou actuel).
 pub fn apply_categories(
     conn: &mut Connection,
@@ -1022,16 +1024,16 @@ pub fn apply_categories(
             })
             .map_err(|e| db_error("read categories", e))?;
         for (id, name, kind, sort) in rows.flatten() {
-            current.insert(id, (name, kind, sort));
+            current.insert((kind, id), (name, sort));
         }
     }
 
     let lists: [(&str, &[XtreamCategory]); 3] = [("movie", vod), ("series", series), ("live", live)];
     let mut next = current.clone();
-    next.retain(|_, (_, kind, _)| lists.iter().all(|(k, l)| l.is_empty() || kind.as_str() != *k));
+    next.retain(|(kind, _), _| lists.iter().all(|(k, l)| l.is_empty() || kind.as_str() != *k));
     for (kind, list) in lists {
         for (index, cat) in list.iter().enumerate() {
-            next.insert(normalize_category_id(&cat.category_id), (cat.category_name.clone(), kind.to_string(), index as i64));
+            next.insert((kind.to_string(), normalize_category_id(&cat.category_id)), (cat.category_name.clone(), index as i64));
         }
     }
     if next == current {
@@ -1041,7 +1043,7 @@ pub fn apply_categories(
 
     // Chaînes dont la catégorie est apparue, disparue ou renommée : la liaison au guide lit ce nom
     let live_names = |t: &CategoryTable| -> HashMap<String, String> {
-        t.iter().filter(|(_, (_, k, _))| k == "live").map(|(id, (n, _, _))| (id.clone(), n.clone())).collect()
+        t.iter().filter(|((k, _), _)| k == "live").map(|((_, id), (n, _))| (id.clone(), n.clone())).collect()
     };
     let (old_live, new_live) = (live_names(&current), live_names(&next));
     let mut relink: Vec<&String> = old_live.keys().filter(|id| new_live.get(*id) != old_live.get(*id)).collect();
@@ -1349,6 +1351,10 @@ async fn fetch_categories(client: &reqwest::Client, url: &str, path: &Path, run_
 // =============================================================================
 
 fn open_refresh_connection(db_path: &Path) -> Result<Connection, ApplyError> {
+    // Source supprimée pendant l'actualisation : l'ouverture recréerait son fichier
+    if crate::storage::catalog_deletion_pending(db_path) {
+        return Err(ApplyError::Failed(crate::storage::SOURCE_CATALOG_DELETED.to_string()));
+    }
     let conn = open_connection(db_path).map_err(ApplyError::Failed)?;
     // Connexion légère : petit cache (8 Mo) au lieu de celui de l'écriture complète
     conn.execute_batch(
@@ -1400,7 +1406,7 @@ pub async fn refresh_catalog(
     lists: Option<Vec<String>>,
     mode: Option<String>,
 ) -> Result<RefreshSummary, String> {
-    validate_db_name(&db_name)?;
+    validate_catalog_db_name(&db_name)?;
     let start = std::time::Instant::now();
     let mut summary = RefreshSummary::default();
 
@@ -1412,7 +1418,7 @@ pub async fn refresh_catalog(
 
     let mode = if mode.as_deref() == Some("manual") { Mode::Manual } else { Mode::Auto };
     let selected = parse_lists(&lists);
-    let db_path = get_data_dir(&app).join(&db_name);
+    let db_path = catalog_db_path(&get_data_dir(&app), &db_name)?;
     let tmp_dir: PathBuf = app
         .path()
         .app_cache_dir()

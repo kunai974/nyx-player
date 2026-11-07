@@ -15,12 +15,17 @@ import type { LightIndexes, LightMovie, LightSeries } from '../../types/lightInd
 
 const cachedLists = new Map<string, unknown[]>();
 
+const mockIsTmdbAvailable = vi.hoisted(() => vi.fn(async (..._args: unknown[]) => true));
 vi.mock('../../services/tmdbCacheSqlite', () => ({
   getCachedList: vi.fn(async (key: string) => cachedLists.get(key) ?? null),
   setCachedList: vi.fn(async (key: string, data: unknown[]) => { cachedLists.set(key, data); }),
+  // Fiches des films de la bannière : rien de gardé ici, les tests suivent les demandes au réseau
+  getCachedDetails: vi.fn(async () => null),
+  cacheMovieDetails: vi.fn(async () => {}),
 }));
 
 vi.mock('../../services/tmdbApi', () => ({
+  isTmdbAvailable: (...args: unknown[]) => mockIsTmdbAvailable(...args),
   default: {
     imageUrl: (path: string | null) => (path ? `img:${path}` : null),
     getTrending: vi.fn(async () => ({ results: [] })),
@@ -42,6 +47,13 @@ vi.mock('../../services/preferencesService', () => ({
   getCarouselPreferences: () => ({ disabledCarousels: [], enabledGenres, filterExoticScripts: false }),
   getEnabledGenres: () => enabledGenres,
   isExoticFilterEnabled: () => false,
+  isTmdbTitleSearchEnabled: () => true,
+}));
+
+const mockLinkTitles = vi.hoisted(() => vi.fn(async (..._args: unknown[]): Promise<number> => 0));
+vi.mock('../../services/titleTmdbLinks', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../services/titleTmdbLinks')>()),
+  linkHomeTitlesAndRefresh: (...args: unknown[]) => mockLinkTitles(...args),
 }));
 
 // ============================================================================
@@ -49,7 +61,7 @@ vi.mock('../../services/preferencesService', () => ({
 // ============================================================================
 
 import tmdb from '../../services/tmdbApi';
-import { useDashboardData } from '../useDashboardData';
+import { useDashboardData, TITLE_LINKS_TIMING } from '../useDashboardData';
 import { TMDB_LANGUAGE_EVENT } from '../../services/eventConstants';
 import { getTmdbLanguage } from '../../utils/tmdbLanguage';
 import {
@@ -457,5 +469,105 @@ describe('useDashboardData — rangées « genres »', () => {
     const rematch = await computeDashboardRematch(NEW());
     act(() => { installDashboardRematch(rematch); });
     expect(second.result.current.genreCarousels.size).toBe(0);
+  });
+});
+
+describe('useDashboardData — sans compte ni clé TMDB (invité)', () => {
+  beforeEach(() => {
+    mockIsTmdbAvailable.mockResolvedValue(false);
+    vi.mocked(tmdb.getTrending).mockClear();
+    vi.mocked(tmdb.getNowPlaying).mockClear();
+  });
+  afterEach(() => {
+    mockIsTmdbAvailable.mockResolvedValue(true);
+  });
+
+  it('aucune demande à TMDB : rangées TMDB vides, accueil prêt, et rien n\'est gardé comme « chargé »', async () => {
+    const { result } = renderHook(() => useDashboardData(oldIndexes));
+    await waitFor(() => expect(result.current.loadingHero).toBe(false));
+
+    expect(tmdb.getTrending).not.toHaveBeenCalled();
+    expect(tmdb.getNowPlaying).not.toHaveBeenCalled();
+    expect(result.current.trendingContent).toEqual([]);
+    expect(result.current.heroMovies).toEqual([]);
+    expect(result.current.nowPlayingContent).toEqual([]);
+    expect(dashboardCache.hasData).toBe(false);
+  });
+
+  it('les nouveautés de la semaine, qui viennent du fournisseur, restent calculées', async () => {
+    const { result } = renderHook(() => useDashboardData(oldIndexes));
+    await waitFor(() => expect(result.current.loadingHero).toBe(false));
+    expect(Array.isArray(result.current.thisWeekMovies)).toBe(true);
+  });
+});
+
+describe('useDashboardData — fournisseur sans numéro TMDB', () => {
+  it('liens par le titre retentés tant que rien n\'est relié, cartes grises en attendant', async () => {
+    const saved = { ...TITLE_LINKS_TIMING, retryMs: [...TITLE_LINKS_TIMING.retryMs] };
+    TITLE_LINKS_TIMING.firstMs = 300;
+    TITLE_LINKS_TIMING.retryMs = [5, 5];
+    try {
+      // Aucun numéro TMDB au catalogue
+      const noIds = catalogue([[1, 0], [2, 0], [3, 0], [4, 0]]);
+      // Premier essai : les listes TMDB n'étaient pas encore en cache (0 lien) ; deuxième : 3 liens
+      mockLinkTitles.mockResolvedValueOnce(0).mockResolvedValueOnce(3);
+      const { result } = renderHook(() => useDashboardData(noIds));
+      await waitFor(() => expect(result.current.loadingHero).toBe(false));
+      await waitFor(() => expect(result.current.linkingTitles).toBe(true));
+      await waitFor(() => expect(mockLinkTitles).toHaveBeenCalledTimes(2));
+      await waitFor(() => expect(result.current.linkingTitles).toBe(false));
+      // Relié au deuxième essai : plus d'essai ensuite
+      await new Promise((r) => setTimeout(r, 30));
+      expect(mockLinkTitles).toHaveBeenCalledTimes(2);
+    } finally {
+      TITLE_LINKS_TIMING.firstMs = saved.firstMs;
+      TITLE_LINKS_TIMING.retryMs = saved.retryMs;
+      mockLinkTitles.mockReset();
+      mockLinkTitles.mockResolvedValue(0);
+    }
+  });
+
+  it('retour sur l\'accueil après des essais finis : pas de nouvelles cartes grises', async () => {
+    const saved = { ...TITLE_LINKS_TIMING, retryMs: [...TITLE_LINKS_TIMING.retryMs] };
+    TITLE_LINKS_TIMING.firstMs = 5;
+    TITLE_LINKS_TIMING.retryMs = [5];
+    try {
+      mockLinkTitles.mockResolvedValue(0);
+      const noIds = catalogue([[1, 0], [2, 0], [3, 0], [4, 0]]);
+      const first = renderHook(() => useDashboardData(noIds));
+      await waitFor(() => expect(mockLinkTitles).toHaveBeenCalledTimes(2));
+      await waitFor(() => expect(first.result.current.linkingTitles).toBe(false));
+      first.unmount();
+      // L'accueil revient (changement d'onglet) avec le même catalogue : aucune carte grise
+      const second = renderHook(() => useDashboardData(noIds));
+      await waitFor(() => expect(second.result.current.loadingHero).toBe(false));
+      expect(second.result.current.linkingTitles).toBe(false);
+    } finally {
+      TITLE_LINKS_TIMING.firstMs = saved.firstMs;
+      TITLE_LINKS_TIMING.retryMs = saved.retryMs;
+      mockLinkTitles.mockReset();
+      mockLinkTitles.mockResolvedValue(0);
+    }
+  });
+
+  it('catalogue relié par le fournisseur : jamais de cartes grises ni de nouvel essai inutile', async () => {
+    const saved = { ...TITLE_LINKS_TIMING, retryMs: [...TITLE_LINKS_TIMING.retryMs] };
+    TITLE_LINKS_TIMING.firstMs = 5;
+    TITLE_LINKS_TIMING.retryMs = [5, 5];
+    try {
+      mockLinkTitles.mockResolvedValue(0);
+      const withIds = catalogue([[1, 10], [2, 20]]);
+      const { result } = renderHook(() => useDashboardData(withIds));
+      await waitFor(() => expect(result.current.loadingHero).toBe(false));
+      await waitFor(() => expect(mockLinkTitles).toHaveBeenCalledTimes(1));
+      await new Promise((r) => setTimeout(r, 30));
+      expect(result.current.linkingTitles).toBe(false);
+      expect(mockLinkTitles).toHaveBeenCalledTimes(1);
+    } finally {
+      TITLE_LINKS_TIMING.firstMs = saved.firstMs;
+      TITLE_LINKS_TIMING.retryMs = saved.retryMs;
+      mockLinkTitles.mockReset();
+      mockLinkTitles.mockResolvedValue(0);
+    }
   });
 });

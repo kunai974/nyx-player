@@ -16,6 +16,8 @@ import type {
   LightCategory,
   LightIndexes,
 } from '../types/lightIndex';
+import { categoryKey } from '../types/lightIndex';
+import i18n from '../i18n/config';
 import type { MovieRow } from '../types/repositories';
 import type { SeriesRow } from '../types/repositories';
 import type { LiveRow } from '../types/repositories';
@@ -90,6 +92,16 @@ function buildPrefixRegistry(urls: string[]): {
 // ============================================================================
 // BUILD FROM THE COMPACT CATALOG
 // ============================================================================
+
+/**
+ * Nom affiché d'une catégorie : « Sans catégorie » si le fournisseur n'en donne pas (Xtream :
+ * category_name absent ou vide ; M3U : groupe absent, écrit « — » par le Rust), au lieu d'un titre de
+ * rangée vide ou d'un tiret.
+ */
+function categoryDisplayName(name: string | null | undefined): string {
+  const trimmed = (name ?? '').trim();
+  return trimmed === '' || trimmed === '—' ? i18n.t('common:unnamed_category') : (name as string);
+}
 
 /**
  * Catalogue compact envoyé par la commande Rust `load_light_catalog` (src-tauri/src/catalog_light.rs) :
@@ -171,7 +183,7 @@ export function buildLightIndexesFromCatalog(catalog: LightCatalog): LightIndexe
 
   const categoriesIndex = new Map<string, LightCategory>();
   for (const [id, name, type] of catalog.categories) {
-    categoriesIndex.set(id, { id, name, type });
+    categoriesIndex.set(categoryKey(type, id), { id, name: categoryDisplayName(name), type });
   }
 
   const moviesByTmdb = new Map<number, LightMovie>();
@@ -310,9 +322,9 @@ export function buildLightIndexesFromSQLite(
   // Step 5: Build categories index
   const categoriesIndex = new Map<string, LightCategory>();
   for (const c of categories) {
-    categoriesIndex.set(c.id, {
+    categoriesIndex.set(categoryKey(c.type, c.id), {
       id: c.id,
-      name: c.name,
+      name: categoryDisplayName(c.name),
       type: c.type,
     });
   }

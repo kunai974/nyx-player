@@ -11,6 +11,7 @@ import { onBackButtonPress } from '@tauri-apps/api/app';
 import { exit } from '@tauri-apps/plugin-process';
 import { isAndroid } from '../utils/platform';
 import { createLogger } from '../utils/logger';
+import { noteExitRequested } from '../services/androidExitReport';
 
 const log = createLogger('BackButton');
 
@@ -80,7 +81,8 @@ export function useAndroidBackButton(): void {
 
     onBackButtonPress(() => {
       if (!dispatchBack()) {
-        void exit(0);
+        // Sortie voulue : si elle finit en plantage (exit() de Tauri sous Android), ce n'est pas une panne
+        void noteExitRequested().catch(() => undefined).then(() => exit(0));
       }
     })
       .then((listener) => {

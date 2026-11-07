@@ -96,8 +96,10 @@
                 color var(--duration-fast) var(--ease-out);
 }
 
-.tv-categories-sidebar__switch-btn:hover {
-    color: var(--text-primary);
+@media (hover: hover) {
+  .tv-categories-sidebar__switch-btn:hover {
+      color: var(--text-primary);
+  }
 }
 
 .tv-categories-sidebar__switch-btn.active {
@@ -144,6 +146,7 @@
     overflow-y: auto;
     overscroll-behavior: auto;
     overflow-x: hidden;
+    /* stylelint-disable-next-line defensive-css/no-fixed-sizes -- 2 px : réserve de la barre de défilement, pas une taille de texte */
     padding-right: 2px;
     padding-top: var(--space-1);
     padding-bottom: var(--space-1);
@@ -213,10 +216,12 @@
     position: relative;
 }
 
-.tv-category-item:hover {
-    background: var(--hover-overlay);
-    color: var(--text-primary);
-    transform: translateX(4px);
+@media (hover: hover) {
+  .tv-category-item:hover {
+      background: var(--hover-overlay);
+      color: var(--text-primary);
+      transform: translateX(4px);
+  }
 }
 
 /* Active State */
@@ -234,6 +239,7 @@
     left: 0;
     top: 50%;
     transform: translateY(-50%);
+    /* stylelint-disable-next-line defensive-css/no-fixed-sizes -- liseré de 3 px : trait fin voulu */
     width: 3px;
     height: 60%;
     background: var(--nyx-red);
@@ -245,6 +251,7 @@
 .tv-category-item__icon {
     font-size: var(--text-base);
     flex-shrink: 0;
+    /* stylelint-disable-next-line defensive-css/no-fixed-sizes -- calage vertical de l'icône sur la première ligne du libellé : 1 px, pas une taille de texte */
     margin-top: 1px;
 }
 
@@ -277,20 +284,27 @@
     transition: opacity var(--duration-fast) var(--ease-out), background-color var(--duration-fast) var(--ease-out), transform var(--duration-fast) var(--ease-out);
 }
 
-.tv-category-item:hover .tv-category-item__pin-btn {
-    opacity: 0.4;
+@media (hover: hover) {
+  .tv-category-item:hover .tv-category-item__pin-btn {
+      opacity: 0.4;
+  }
 }
 
-.tv-category-item__pin-btn:hover {
-    opacity: 1 !important;
-    background: var(--hover-overlay);
-    transform: scale(1.1);
+@media (hover: hover) {
+  .tv-category-item__pin-btn:hover {
+      /* stylelint-disable-next-line declaration-no-important -- bat l'opacité du survol de la ligne (0.4) et de l'épingle posée (0.7), plus spécifiques */
+      opacity: 1 !important;
+      background: var(--hover-overlay);
+      transform: scale(1.1);
+  }
 }
 
 .tv-category-item__pin-btn.pinned {
     opacity: 0.7;
 }
 
-.tv-category-item:hover .tv-category-item__pin-btn.pinned {
-    opacity: 1;
+@media (hover: hover) {
+  .tv-category-item:hover .tv-category-item__pin-btn.pinned {
+      opacity: 1;
+  }
 }

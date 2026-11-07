@@ -20,6 +20,7 @@ import { serverNow } from './sync/serverClock';
 import { PREFERENCES_EVENT, CAROUSEL_PREFERENCES_EVENT } from './eventConstants';
 import { DEFAULT_CAROUSELS } from './carouselConstants';
 import { createLogger } from '../utils/logger';
+import { providerTablesOn } from './sync/cloudScope';
 
 const log = createLogger('Preferences');
 
@@ -267,6 +268,18 @@ export async function setGeekStats(enabled: boolean): Promise<void> {
   await setPreference('geek_stats_enabled', String(enabled));
 }
 
+/**
+ * Recherche des fiches TMDB par le titre pour les films et séries d'une liste M3U (qui ne donne pas
+ * de numéro TMDB). Active par défaut ; coupée, les fiches gardent les images de la liste.
+ */
+export function isTmdbTitleSearchEnabled(): boolean {
+  return getPreference('tmdb_title_search') !== 'false';
+}
+
+export async function setTmdbTitleSearch(enabled: boolean): Promise<void> {
+  await setPreference('tmdb_title_search', String(enabled));
+}
+
 export function getDnsProvider(): DnsProvider {
   return (getPreference('dns_provider') as DnsProvider) ?? DEFAULT_USER_PREFS.dnsProvider;
 }
@@ -411,12 +424,26 @@ export function getLastProviderHash(): string | null {
 }
 
 /**
- * Persist SHA256 hash of the provider host.
- * Written to SQLite local + pushed to Supabase cloud via setPreference.
+ * Empreinte du fournisseur de cet appareil seulement (son adresse notée), sans repli sur la
+ * préférence synchronisée : null tant qu'elle est inconnue. Pour ranger une donnée chez un
+ * fournisseur (tables du cloud par fournisseur, sync/cloudScope.ts), mieux vaut ne rien envoyer
+ * que l'envoyer chez le fournisseur d'un autre appareil.
+ */
+export function getDeviceProviderHash(): string | null {
+  return deviceProviderHash;
+}
+
+/**
+ * Note le fournisseur de cet appareil (empreinte SHA-256 de son adresse).
+ * Tables d'une seule source : aussi dans la préférence `last_provider_hash`, base locale et cloud.
+ * Tables par fournisseur (sync/cloudScope.ts) : sur l'appareil seulement. Chaque appareil a alors
+ * son fournisseur, et les appareils restés sur une ancienne version comparent cette préférence au
+ * leur : la changer leur ferait effacer leurs reprises, favoris TV et catégories masquées.
  */
 export async function setLastProviderHash(host: string): Promise<void> {
   const hash = await sha256(host);
   deviceProviderHash = hash;
+  if (providerTablesOn()) return;
   await setPreference('last_provider_hash', hash);
 }
 

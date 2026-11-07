@@ -43,7 +43,7 @@
             <a href="mentions-legales.html">Mentions légales</a>
         </nav>
 
-        <p class="legal-updated">Dernière mise à jour : 12 octobre 2026</p>
+        <p class="legal-updated">Dernière mise à jour : 7 novembre 2026</p>
 
         <div class="legal-content">
             <h2>1. Qui sommes-nous</h2>
@@ -67,7 +67,8 @@
                     passe) : enregistrés chiffrés sur votre appareil, dans le Gestionnaire
                     d'identification de Windows sous Windows, et avec une clé non exportable du
                     Keystore Android (AES-256-GCM) sous Android. <strong>Ils ne sont jamais envoyés à
-                    nos serveurs.</strong></li>
+                    nos serveurs</strong>, sauf chiffrés et illisibles pour nous si vous connectez une
+                    TV avec votre téléphone (voir la section 9).</li>
                 <li><strong>Base locale</strong> : le catalogue de votre fournisseur (chaînes, films,
                     séries), le guide TV si vous l'activez, votre liste, vos reprises de lecture, vos
                     favoris et vos réglages, dans une base SQLite sur votre appareil (une par compte).</li>
@@ -241,6 +242,32 @@
                 clair entre votre appareil et votre fournisseur. Cela dépend de votre fournisseur, pas
                 de Nyx Player.
             </p>
+
+            <h3>Connecter une TV avec votre téléphone (QR code)</h3>
+            <ul>
+                <li><strong>Ce qui transite</strong> : ce que vous tapez sur la page nyxplayer.app/tv,
+                    c'est-à-dire votre compte Nyx (e-mail et mot de passe) et, si vous le remplissez,
+                    votre fournisseur IPTV.</li>
+                <li><strong>Chiffrement</strong> : sur votre téléphone, avant tout envoi, avec une clé
+                    que la TV crée pour ce seul code ; la clé qui permet de lire ne quitte jamais la TV.
+                    La partie du lien du QR code qui porte la clé de la TV (après le « # ») n'est pas
+                    envoyée à notre site par votre navigateur. Procédé : ECDH P-256, AES-256-GCM.</li>
+                <li><strong>Transport</strong> : le message chiffré passe par la messagerie instantanée
+                    de notre prestataire Supabase, sur un canal au nom tiré au hasard. Il est transmis
+                    directement à la TV, sans être enregistré dans notre base ; ni nous ni Supabase ne
+                    pouvons le lire.</li>
+                <li><strong>Durée</strong> : le canal n'existe que pendant que la TV affiche le code, au
+                    plus 10 minutes (5 sur l'écran du fournisseur). La TV le ferme dès qu'elle s'est
+                    connectée ou quand vous quittez l'écran. Le code ne sert qu'une fois.</li>
+                <li><strong>Journaux</strong> : comme pour toute visite d'un service en ligne, les
+                    journaux techniques de Supabase et de notre hébergeur peuvent noter qu'une connexion
+                    a eu lieu (heure, adresse IP, appareil). Vos saisies n'y figurent pas en clair.</li>
+                <li><strong>Ensuite</strong> : la TV garde vos identifiants comme si vous les aviez
+                    tapés à la télécommande (voir la section 2). La page ne garde rien ; votre navigateur
+                    peut toutefois proposer d'enregistrer le mot de passe, comme sur tout formulaire.
+                    Le code de la page est public :
+                    <a href="https://github.com/kunai974/nyx-player/tree/main/web/tv">github.com/kunai974/nyx-player</a>.</li>
+            </ul>
 
             <h2>10. Durée de conservation</h2>
             <ul>

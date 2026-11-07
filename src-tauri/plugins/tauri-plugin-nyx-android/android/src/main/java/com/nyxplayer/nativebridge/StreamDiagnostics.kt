@@ -1,6 +1,5 @@
 package com.nyxplayer.nativebridge
 
-import android.net.Uri
 import android.util.Log
 
 /**
@@ -52,10 +51,20 @@ object StreamDiagnostics {
 
     /** `http://host/movie/user/pass/123.mkv` → `movie · mkv` */
     fun describeUrl(url: String): String {
-        val path = runCatching { Uri.parse(url).path }.getOrNull().orEmpty()
+        val path = urlPath(url)
         val kind = Regex("^/(live|movie|series)/").find(path)?.groupValues?.get(1) ?: "stream"
         val extension = path.substringAfterLast('.', "").takeIf { it.length in 1..5 && !it.contains('/') } ?: "?"
         return "$kind · $extension"
+    }
+
+    /**
+     * Chemin d'une adresse, sans « schéma://hôte », requête ni ancre. Sans android.net.Uri, qui
+     * n'existe pas dans les tests sur la JVM (il y renvoyait un chemin vide).
+     */
+    internal fun urlPath(url: String): String {
+        val afterScheme = url.substringAfter("://", "")
+        val path = afterScheme.indexOf('/').let { if (it < 0) "" else afterScheme.substring(it) }
+        return path.substringBefore('?').substringBefore('#')
     }
 
     /**

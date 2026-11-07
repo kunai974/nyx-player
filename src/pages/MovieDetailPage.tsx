@@ -2,6 +2,7 @@ import React, { useEffect, useState, useMemo, useRef } from 'react';
 import tmdb from '../services/tmdbApi';
 import { toggleWatchlistOrNotify } from '../services/watchlistActions';
 import WatchlistButton from '../components/Common/WatchlistButton';
+import { getAllVersionsByTmdb } from '../utils/lightIndexHelpers';
 import type { XtreamMovie } from '../types/xtream';
 import type { LightIndexes } from '../types/lightIndex';
 import { useTmdbMovie } from '../hooks/useTmdbMovie';
@@ -21,7 +22,9 @@ import { pickBestLogo } from '../utils/tmdbLogoHelper';
 import { useTvPageFocus } from '../hooks/useTvPageFocus';
 import { isTv } from '../utils/platform';
 import './MovieDetailPage.css';
+import { linkTitlesByName, mostlyWithoutTmdb } from '../services/titleTmdbLinks';
 import { warnOnReject } from '../utils/warnOnReject';
+import { showAppNotice } from '../utils/appNotice';
 
 // Constants
 const MAX_SIMILAR_MOVIES = 20;
@@ -72,6 +75,22 @@ const MovieDetailPage: React.FC<MovieDetailPageProps> = ({
     setActivePage('MovieDetailPage');
   }, [setActivePage]);
 
+  // Numéro trouvé par le titre après l'ouverture (recherche plus longue que l'attente de
+  // useContentNavigation) : les autres versions du même titre rejoignent la fiche
+  const versionsWithTitleLinks = useMemo<XtreamMovie[]>(() => {
+    if (!lightIndexes || resolvedTmdbId <= 0 || initialTmdbId > 0) return initialVersions;
+    const shown = new Set(initialVersions.map((v) => Number(v.stream_id)));
+    const extra = getAllVersionsByTmdb(lightIndexes, resolvedTmdbId, 'movie')
+      .filter((lv) => !shown.has(lv.id))
+      .map((lv) => ({
+        stream_id: lv.id,
+        name: lv.name,
+        tmdb: resolvedTmdbId,
+        container_extension: lv.containerExt || undefined,
+      } as unknown as XtreamMovie));
+    return extra.length > 0 ? [...initialVersions, ...extra] : initialVersions;
+  }, [initialVersions, initialTmdbId, lightIndexes, resolvedTmdbId]);
+
   // --- Logic Layer: Source Selection Hook ---
   const {
     selectedVersion,
@@ -82,7 +101,7 @@ const MovieDetailPage: React.FC<MovieDetailPageProps> = ({
     displayVersions,
     handleVersionSelect,
   } = useMovieSourceSelection({
-    initialVersions,
+    initialVersions: versionsWithTitleLinks,
     resolvedTmdbId,
     onLoadVersion,
   });
@@ -93,6 +112,25 @@ const MovieDetailPage: React.FC<MovieDetailPageProps> = ({
   // Similar Movies (Derived via useMemo - uses lightIndexes.moviesByTmdb)
   const recommendations = details?.recommendations?.results;
   const moviesByTmdb = lightIndexes?.moviesByTmdb;
+  // Catalogue sans numéros TMDB : les similaires choisis par TMDB sont cherchés par leurs titres dans le
+  // catalogue (en local, titre exact et année), puis la rangée se recalcule
+  const [similarLinks, setSimilarLinks] = useState(0);
+  useEffect(() => {
+    if (!lightIndexes || !recommendations?.length || !mostlyWithoutTmdb(lightIndexes)) return;
+    let cancelled = false;
+    const titles = recommendations.flatMap((rec) => {
+      const names = [rec.title, rec.original_title].filter((t): t is string => !!t);
+      const year = Number.parseInt((rec.release_date ?? '').slice(0, 4), 10);
+      return names.length > 0 ? [{ kind: 'movie' as const, tmdbId: rec.id, titles: names, ...(year ? { year } : {}) }] : [];
+    });
+    // Un peu après l'ouverture : la comparaison parcourt tout le catalogue, la fiche s'affiche d'abord
+    const timer = setTimeout(() => {
+      void linkTitlesByName(lightIndexes, titles, () => !cancelled).then((n) => {
+        if (n > 0 && !cancelled) setSimilarLinks((v) => v + 1);
+      });
+    }, 1500);
+    return () => { cancelled = true; clearTimeout(timer); };
+  }, [lightIndexes, recommendations]);
   const similarMovies = useMemo(() => {
     if (!recommendations || recommendations.length === 0) return [];
     if (!moviesByTmdb || moviesByTmdb.size === 0) return [];
@@ -115,7 +153,8 @@ const MovieDetailPage: React.FC<MovieDetailPageProps> = ({
       }
     }
     return foundMovies;
-  }, [recommendations, moviesByTmdb]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- similarLinks relance le calcul quand des similaires sont reliés (catalogue modifié sur place)
+  }, [recommendations, moviesByTmdb, similarLinks]);
 
   // --- UI States ---
   const [isVisible, setIsVisible] = useState(false);
@@ -315,7 +354,10 @@ const MovieDetailPage: React.FC<MovieDetailPageProps> = ({
                         setHasMovieProgress(false);
                         setShowResetToast(true);
                         setTimeout(() => setShowResetToast(false), 3000);
-                      }).catch(warnOnReject('MovieDetail'));
+                      }).catch((err) => {
+                        warnOnReject('MovieDetail')(err);
+                        showAppNotice('progress_reset_failed');
+                      });
                     }}
                   >
                     <svg className="reset-icon" viewBox="0 0 192.49 171.14" fill="currentColor" aria-hidden="true"><path d="M105.53,171.05c.45.06.92.09,1.39.09,60.32,0,106.26-62.73,76.01-126.37-7.32-15.4-19.77-27.86-35.17-35.19C84.47-20.52,22.13,24.71,21.38,84.5H0l32.72,31.05,32.72-31.05h-23.06c.76-45.82,49.45-80.19,98.01-54.95,9.73,5.06,17.67,13.08,22.7,22.83,25.41,49.33-10.61,98.75-57.56,97.74v20.93Z"/></svg>

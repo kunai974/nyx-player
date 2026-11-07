@@ -120,6 +120,7 @@ class UpdateDownloadArgs {
 class NyxAndroidPlugin(private val activity: Activity) : Plugin(activity) {
     private val secureStore by lazy { SecureStore(activity.applicationContext) }
     private val appUpdater by lazy { AppUpdater(activity) }
+    private val exitReports by lazy { ExitReports(activity.applicationContext) }
     private val main = Handler(Looper.getMainLooper())
 
     private var webView: WebView? = null
@@ -135,6 +136,8 @@ class NyxAndroidPlugin(private val activity: Activity) : Plugin(activity) {
 
     override fun load(webView: WebView) {
         this.webView = webView
+        // Avant toute commande du lecteur : ce que la session précédente a laissé (ExitReports)
+        exitReports.snapshotPreviousSession()
         // Certificats pour les flux HTTPS, prêts avant la première lecture (sans bloquer l'interface)
         SystemCaBundle.prefetch(activity)
         // APK d'une mise à jour précédente : installée ou abandonnée, il n'a plus d'usage
@@ -397,6 +400,55 @@ class NyxAndroidPlugin(private val activity: Activity) : Plugin(activity) {
         })
     }
 
+    /**
+     * Dernière fermeture anormale de l'app (plantage natif ou Java, app figée, app tuée pendant une
+     * lecture), rendue une seule fois au lancement suivant ; `report` vaut null sinon. Envoyée à
+     * Sentry par la page (services/androidExitReport.ts). Lecture du disque hors du fil de l'interface.
+     */
+    @Command
+    fun lastExitReport(invoke: Invoke) {
+        Thread {
+            val report = try {
+                exitReports.takeLastReport()
+            } catch (e: Exception) {
+                StreamDiagnostics.warn("app", "exit report failed: ${e.javaClass.simpleName}")
+                null
+            }
+            invoke.resolve(JSObject().apply { put("report", report?.let(::exitReportJson) ?: JSONObject.NULL) })
+        }.start()
+    }
+
+    /** Retour à la racine : la sortie qui suit n'est pas une panne (ExitReportPolicy.REQUESTED_EXIT_WINDOW_MS). */
+    @Command
+    fun noteExitRequested(invoke: Invoke) {
+        try {
+            exitReports.noteExitRequested(System.currentTimeMillis())
+        } catch (e: Exception) {
+            StreamDiagnostics.warn("app", "exit note failed: ${e.javaClass.simpleName}")
+        }
+        invoke.resolve()
+    }
+
+    private fun exitReportJson(report: ExitReportPolicy.Report): JSObject = JSObject().apply {
+        put("reason", report.reason)
+        put("status", report.status)
+        put("foreground", report.foreground)
+        put("timestamp", report.timestampMs)
+        put("description", report.description ?: JSONObject.NULL)
+        put("pssKb", report.pssKb)
+        put("rssKb", report.rssKb)
+        put("television", isTelevision())
+        put("player", report.player?.let {
+            JSObject().apply {
+                put("kind", it.kind)
+                put("extension", it.extension)
+                put("phase", it.phase)
+                put("codec", it.codec ?: JSONObject.NULL)
+                put("hwdec", it.hwdec ?: JSONObject.NULL)
+            }
+        } ?: JSONObject.NULL)
+    }
+
     // ---- Réseau -----------------------------------------------------------
 
     /** Type de connexion, pour ne pas télécharger l'EPG sur des données mobiles limitées (DevicePolicy). */
@@ -563,6 +615,13 @@ class NyxAndroidPlugin(private val activity: Activity) : Plugin(activity) {
                 invoke.resolve()
             } catch (e: Exception) {
                 invoke.reject(e.message ?: "Player command failed", e)
+            } catch (e: LinkageError) {
+                // Bibliothèque native du lecteur qui ne se charge pas sur cet appareil
+                // (UnsatisfiedLinkError, NoClassDefFoundError, ExceptionInInitializerError) : l'app se
+                // fermait d'un coup, la page affiche maintenant l'écran d'erreur du lecteur
+                // (usePlaybackSession). Les manques de mémoire (OutOfMemoryError) ne sont pas rattrapés.
+                StreamDiagnostics.warn("app", "player unavailable: ${e.javaClass.simpleName}")
+                invoke.reject(e.message ?: "Player unavailable", RuntimeException(e))
             }
         }
     }

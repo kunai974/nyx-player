@@ -106,7 +106,7 @@ describe('wipeProviderSpecificData and the last agreement with the cloud', () =>
         for (const table of ['playback_progress', 'live_tv_favorites', 'live_tv_pinned_categories', 'hidden_categories']) {
             expect(executed).toContain(`DELETE FROM ${table}`);
         }
-        expect(clearBaselines).toHaveBeenCalledWith('user-test', ['playback', 'livetv', 'hidden']);
+        expect(clearBaselines).toHaveBeenCalledWith('user-test', ['playback', 'playback_v2', 'livetv', 'livetv_v2', 'hidden', 'hidden_v2']);
         vi.mocked(getCurrentSyncUserId).mockReturnValue(null);
     });
 });

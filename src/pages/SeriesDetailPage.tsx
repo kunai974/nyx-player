@@ -24,6 +24,7 @@ import { useTvPageFocus } from '../hooks/useTvPageFocus';
 import { isTv } from '../utils/platform';
 import './SeriesDetailPage.css';
 import { warnOnReject } from '../utils/warnOnReject';
+import { showAppNotice } from '../utils/appNotice';
 
 interface SeriesDetailPageProps {
   series: AppSeriesInfo;
@@ -341,10 +342,14 @@ const SeriesDetailPage: React.FC<SeriesDetailPageProps> = ({
                       title={t('reset_season_tooltip')}
                       onClick={() => {
                         const episodeIds = currentEpisodes.map(ep => ep.id || ep.title).filter(Boolean);
-                        clearMultipleProgress(episodeIds as (string | number)[]).catch(warnOnReject('SeriesDetail'));
-                        setResetKey(prev => prev + 1);
-                        setShowResetToast(true);
-                        setTimeout(() => setShowResetToast(false), 3000);
+                        clearMultipleProgress(episodeIds as (string | number)[]).then(() => {
+                          setResetKey(prev => prev + 1);
+                          setShowResetToast(true);
+                          setTimeout(() => setShowResetToast(false), 3000);
+                        }).catch((err) => {
+                          warnOnReject('SeriesDetail')(err);
+                          showAppNotice('progress_reset_failed');
+                        });
                       }}
                     >
                       <svg width="14" height="14" viewBox="0 0 192.49 171.14" fill="currentColor" aria-hidden="true" style={{verticalAlign: 'middle'}}><path d="M105.53,171.05c.45.06.92.09,1.39.09,60.32,0,106.26-62.73,76.01-126.37-7.32-15.4-19.77-27.86-35.17-35.19C84.47-20.52,22.13,24.71,21.38,84.5H0l32.72,31.05,32.72-31.05h-23.06c.76-45.82,49.45-80.19,98.01-54.95,9.73,5.06,17.67,13.08,22.7,22.83,25.41,49.33-10.61,98.75-57.56,97.74v20.93Z"/></svg> {t('reset_season_label')}

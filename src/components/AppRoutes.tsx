@@ -46,6 +46,8 @@ interface AppRoutesProps {
     onProfileRenamed?: () => void;
     /** Déconnexion (téléphone : en bas de la liste des rubriques des paramètres) */
     onLogout?: () => void;
+    /** Invité : quitter l'espace invité pour se connecter ou créer un compte (réglages > Compte) */
+    onLeaveGuest?: (intent: 'login' | 'register') => void;
     /** Accueil caché par une fiche ou par la lecture : la bannière arrête sa rotation. */
     homeCovered?: boolean;
 }
@@ -67,6 +69,7 @@ const AppRoutes: React.FC<AppRoutesProps> = ({
     profileId,
     onProfileRenamed,
     onLogout,
+    onLeaveGuest,
     homeCovered = false,
 }) => {
 
@@ -137,6 +140,7 @@ const AppRoutes: React.FC<AppRoutesProps> = ({
                 profileId={profileId}
                 onProfileRenamed={onProfileRenamed}
                 onLogout={onLogout}
+                onLeaveGuest={onLeaveGuest}
             />
             </ErrorBoundary>
         );

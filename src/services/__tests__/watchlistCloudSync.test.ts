@@ -125,6 +125,7 @@ vi.mock('../dbCore', () => ({
     getMeta: vi.fn(async (key: string) => meta.get(key) ?? null),
     setMeta: vi.fn(async (key: string, value: string) => { meta.set(key, value); }),
     isDatabaseOf: vi.fn(() => true),
+    getDatabaseFileName: vi.fn(() => 'test.db'),
 }));
 
 vi.mock('../preferencesService', () => ({

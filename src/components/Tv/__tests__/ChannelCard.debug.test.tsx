@@ -9,6 +9,11 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import ChannelCard from '../ChannelCard';
+import { brancherOutilsTest } from '../../../services/outilsTest';
+import ChannelCardDebug from '../../../dev/ChannelCardDebug';
+
+// Pastille branchée comme le fait src/dev/prises.ts ; la condition DEV de ChannelCard décide seule si elle s'affiche.
+brancherOutilsTest({ pastilleChaine: ChannelCardDebug });
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => key }),

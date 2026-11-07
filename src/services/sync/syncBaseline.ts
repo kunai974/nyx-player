@@ -22,7 +22,13 @@ import { createLogger } from '../../utils/logger';
 
 const log = createLogger('Sync');
 
-export type BaselineScope = 'watchlist' | 'playback' | 'livetv' | 'hidden';
+/**
+ * Un dernier accord par type de données ; `…_v2` pour les tables du cloud par fournisseur
+ * (sync/cloudScope.ts), dont les clés portent le fournisseur.
+ */
+export type BaselineScope =
+  | 'watchlist' | 'playback' | 'livetv' | 'hidden'
+  | 'watchlist_v2' | 'playback_v2' | 'livetv_v2' | 'hidden_v2';
 export type Baseline = Map<string, number>;
 
 /**
@@ -50,7 +56,9 @@ function serialize<T>(task: () => Promise<T>): Promise<T> {
 }
 
 /** Tous les types de données synchronisés avec un dernier accord */
-export const ALL_SCOPES: readonly BaselineScope[] = ['watchlist', 'playback', 'livetv', 'hidden'];
+export const ALL_SCOPES: readonly BaselineScope[] = [
+  'watchlist', 'playback', 'livetv', 'hidden', 'watchlist_v2', 'playback_v2', 'livetv_v2', 'hidden_v2',
+];
 
 /**
  * Génération du dernier accord, une par type : augmentée à chaque effacement (données locales

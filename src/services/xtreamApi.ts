@@ -13,7 +13,7 @@
 
 import type { XtreamCredentials, IptvCategory, IptvStream, IptvSeries } from '../types/iptv';
 import type { XtreamAuthResponse, XtreamSeriesInfo, XtreamUserInfo, XtreamVodInfo } from '../types/xtream';
-import { iptvFetch, isProviderHttpServerError } from './networkService';
+import { iptvFetch, iptvFetchPublic, isProviderHttpServerError } from './networkService';
 import { normalizeTmdbId } from '../utils/normalizeTmdb';
 import { sanitizeIptvUrl } from '../utils/sanitizeUrl';
 import { encodeXtreamPathSegment, safeContainerExtension } from '../utils/xtreamCredentials';
@@ -131,11 +131,17 @@ export class XtreamApiService {
   private host: string;
   private username: string;
   private password: string;
+  private fetchText: (url: string) => Promise<string>;
 
-  constructor(creds: XtreamCredentials) {
+  /**
+   * `publicOnly` : serveur reçu d'un autre appareil (QR code), joint seulement à une adresse
+   * publique, redirections comprises, pour que la TV ne serve pas à sonder le réseau de la maison.
+   */
+  constructor(creds: XtreamCredentials, options: { publicOnly?: boolean } = {}) {
     this.host = creds.host.endsWith('/') ? creds.host.slice(0, -1) : creds.host;
     this.username = creds.username;
     this.password = creds.password;
+    this.fetchText = options.publicOnly ? iptvFetchPublic : iptvFetch;
   }
 
   private getBaseUrl(): string {
@@ -182,7 +188,7 @@ export class XtreamApiService {
 
   // Use Tauri backend to bypass CORS
   private async safeFetch<T = unknown>(url: string): Promise<T | null> {
-    return this.parseJson<T>(await iptvFetch(url));
+    return this.parseJson<T>(await this.fetchText(url));
   }
 
   /** Réponse lue en JSON ; vide ou illisible : null (rien n'est levé) */
@@ -206,7 +212,7 @@ export class XtreamApiService {
   async authenticate(): Promise<XtreamAuthResponse> {
     let data: XtreamAuthResponse | null;
     try {
-      const raw = await iptvFetch(this.getBaseUrl());
+      const raw = await this.fetchText(this.getBaseUrl());
       const afterNotice = raw && looksLikeHtml(raw) ? jsonAfterPhpNotice(raw) : undefined;
       if (afterNotice === null) {
         log.warn('Page web reçue au lieu des informations du compte (maintenance du fournisseur ?)');
@@ -245,7 +251,7 @@ export class XtreamApiService {
   /** Vrai si la racine du serveur répond sans erreur 5xx ni panne réseau (aucun identifiant envoyé). */
   private async serverAnswersWithoutCredentials(): Promise<boolean> {
     try {
-      await iptvFetch(`${this.host}/`);
+      await this.fetchText(`${this.host}/`);
       return true;
     } catch {
       return false;

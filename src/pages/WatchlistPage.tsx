@@ -10,6 +10,8 @@ import type { LightIndexes } from '../types/lightIndex';
 import type { NavigateToContent, TabType } from '../types/navigation';
 import { useDevOverrides } from '../contexts/DevOverrideContext';
 import { devLog } from '../utils/devLog';
+import { createLogger } from '../utils/logger';
+import { showAppNotice } from '../utils/appNotice';
 import filmIcon from '../assets/icons/film.svg';
 import starIcon from '../assets/icons/star.svg';
 import NyxButton from '../components/Common/NyxButton';
@@ -19,6 +21,8 @@ import { useTvLongPress } from '../hooks/useTvLongPress';
 import { clickableProps } from '../utils/clickable';
 import { isTv } from '../utils/platform';
 import './WatchlistPage.css';
+
+const log = createLogger('WatchlistPage');
 
 interface WatchlistPageProps {
   onNavigateToContent: NavigateToContent;
@@ -269,7 +273,13 @@ const WatchlistPage: React.FC<WatchlistPageProps> = ({
 
   const handleRemove = async (e: React.MouseEvent | undefined, item: HydratedWatchlistItem) => {
     e?.stopPropagation();
-    await removeFromWatchlist(item.stream_id, item.tmdb_id, item.type);
+    try {
+      await removeFromWatchlist(item.stream_id, item.tmdb_id, item.type);
+    } catch (err) {
+      // Base occupée ou fermée : même message que le bouton « Ma liste » des autres écrans.
+      log.error('Retrait de Ma liste impossible :', err);
+      showAppNotice('watchlist_update_failed');
+    }
     await loadWatchlist();
   };
 

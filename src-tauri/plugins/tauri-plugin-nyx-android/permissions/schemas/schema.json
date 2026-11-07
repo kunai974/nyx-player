@@ -355,6 +355,18 @@
           "markdownDescription": "Denies the install_update command without any pre-configured scope."
         },
         {
+          "description": "Enables the last_exit_report command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-last-exit-report",
+          "markdownDescription": "Enables the last_exit_report command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the last_exit_report command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-last-exit-report",
+          "markdownDescription": "Denies the last_exit_report command without any pre-configured scope."
+        },
+        {
           "description": "Enables the network_status command without any pre-configured scope.",
           "type": "string",
           "const": "allow-network-status",
@@ -365,6 +377,18 @@
           "type": "string",
           "const": "deny-network-status",
           "markdownDescription": "Denies the network_status command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the note_exit_requested command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-note-exit-requested",
+          "markdownDescription": "Enables the note_exit_requested command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the note_exit_requested command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-note-exit-requested",
+          "markdownDescription": "Denies the note_exit_requested command without any pre-configured scope."
         },
         {
           "description": "Enables the play command without any pre-configured scope.",
@@ -595,10 +619,10 @@
           "markdownDescription": "Denies the update_info command without any pre-configured scope."
         },
         {
-          "description": "Player control, secure credential storage, app updates and event listeners for the Nyx Player Android bridge.\n#### This default permission set includes:\n\n- `allow-play`\n- `allow-stop`\n- `allow-set-paused`\n- `allow-seek`\n- `allow-set-volume`\n- `allow-set-muted`\n- `allow-set-speed`\n- `allow-select-track`\n- `allow-set-resize-mode`\n- `allow-set-video-margins`\n- `allow-set-subtitle-scale`\n- `allow-set-fullscreen`\n- `allow-get-property`\n- `allow-network-status`\n- `allow-device-info`\n- `allow-secure-get`\n- `allow-secure-set`\n- `allow-secure-delete`\n- `allow-update-info`\n- `allow-fetch-update-manifest`\n- `allow-request-install-permission`\n- `allow-download-update`\n- `allow-install-update`\n- `allow-register-listener`\n- `allow-remove-listener`",
+          "description": "Player control, secure credential storage, app updates and event listeners for the Nyx Player Android bridge.\n#### This default permission set includes:\n\n- `allow-play`\n- `allow-stop`\n- `allow-set-paused`\n- `allow-seek`\n- `allow-set-volume`\n- `allow-set-muted`\n- `allow-set-speed`\n- `allow-select-track`\n- `allow-set-resize-mode`\n- `allow-set-video-margins`\n- `allow-set-subtitle-scale`\n- `allow-set-fullscreen`\n- `allow-get-property`\n- `allow-network-status`\n- `allow-note-exit-requested`\n- `allow-device-info`\n- `allow-last-exit-report`\n- `allow-secure-get`\n- `allow-secure-set`\n- `allow-secure-delete`\n- `allow-update-info`\n- `allow-fetch-update-manifest`\n- `allow-request-install-permission`\n- `allow-download-update`\n- `allow-install-update`\n- `allow-register-listener`\n- `allow-remove-listener`",
           "type": "string",
           "const": "default",
-          "markdownDescription": "Player control, secure credential storage, app updates and event listeners for the Nyx Player Android bridge.\n#### This default permission set includes:\n\n- `allow-play`\n- `allow-stop`\n- `allow-set-paused`\n- `allow-seek`\n- `allow-set-volume`\n- `allow-set-muted`\n- `allow-set-speed`\n- `allow-select-track`\n- `allow-set-resize-mode`\n- `allow-set-video-margins`\n- `allow-set-subtitle-scale`\n- `allow-set-fullscreen`\n- `allow-get-property`\n- `allow-network-status`\n- `allow-device-info`\n- `allow-secure-get`\n- `allow-secure-set`\n- `allow-secure-delete`\n- `allow-update-info`\n- `allow-fetch-update-manifest`\n- `allow-request-install-permission`\n- `allow-download-update`\n- `allow-install-update`\n- `allow-register-listener`\n- `allow-remove-listener`"
+          "markdownDescription": "Player control, secure credential storage, app updates and event listeners for the Nyx Player Android bridge.\n#### This default permission set includes:\n\n- `allow-play`\n- `allow-stop`\n- `allow-set-paused`\n- `allow-seek`\n- `allow-set-volume`\n- `allow-set-muted`\n- `allow-set-speed`\n- `allow-select-track`\n- `allow-set-resize-mode`\n- `allow-set-video-margins`\n- `allow-set-subtitle-scale`\n- `allow-set-fullscreen`\n- `allow-get-property`\n- `allow-network-status`\n- `allow-note-exit-requested`\n- `allow-device-info`\n- `allow-last-exit-report`\n- `allow-secure-get`\n- `allow-secure-set`\n- `allow-secure-delete`\n- `allow-update-info`\n- `allow-fetch-update-manifest`\n- `allow-request-install-permission`\n- `allow-download-update`\n- `allow-install-update`\n- `allow-register-listener`\n- `allow-remove-listener`"
         }
       ]
     }

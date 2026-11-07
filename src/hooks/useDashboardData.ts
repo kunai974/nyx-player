@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useState, useMemo, useRef } from 'react';
 import type { HeroMovie } from '../types/dashboard';
 import {
   buildHeroFromTrendingItems,
@@ -37,10 +37,25 @@ import {
   DASHBOARD_ROW_LIMIT,
   DASHBOARD_HERO_COUNT,
 } from '../services/dashboardCache';
+import { isTmdbAvailable } from '../services/tmdbApi';
 import { computeBaseRematch, computeGenreRematch } from '../services/dashboardRematch';
+import { linkHomeTitlesAndRefresh, linkRecentByTitle, mostlyWithoutTmdb, titleLinksSettled } from '../services/titleTmdbLinks';
 import { createLogger } from '../utils/logger';
 
 const log = createLogger('Dashboard');
+
+/**
+ * Délai avant de comparer les listes TMDB de l'accueil aux noms du catalogue (fournisseurs sans
+ * numéro TMDB) : l'accueil est affiché et ses rangées par genre chargées avant ce travail.
+ */
+/** Catalogues dont les essais sont finis : revenir sur l'accueil ne remet pas de cartes grises */
+const exhaustedCatalogs = new WeakSet<object>();
+
+export const TITLE_LINKS_TIMING = { firstMs: 4000, retryMs: [8000, 18000] as number[] };
+/**
+ * Nouveaux essais si les listes TMDB de l'accueil ne sont pas encore en cache (catalogue neuf, changement de
+ * source : elles arrivent après l'affichage). Un essai déjà fait pour les mêmes listes ne refait aucun travail.
+ */
 
 // Cache du module (affichage immédiat au retour) et recalcul après une actualisation du catalogue :
 // services/dashboardCache.ts. Réexportés ici pour les appelants historiques.
@@ -58,6 +73,8 @@ interface UseDashboardDataReturn {
   carouselPrefs: CarouselPreferences;
   thisWeekMovies: LightMovie[];
   thisWeekSeries: LightSeries[];
+  /** Fournisseur sans numéro TMDB : les rangées arrivent avec les liens par le titre (cartes grises en attendant) */
+  linkingTitles: boolean;
 }
 
 /** Au moins une liste de l'accueil a été lue (elle est en cache) : TMDB répondait */
@@ -149,15 +166,19 @@ export function useDashboardData(lightIndexes: LightIndexes | undefined): UseDas
   // Use lightIndexes for thisWeek content (RAM optimized)
   // carouselPrefs in deps ensures recalc when exotic filter toggles
   const exoticEnabled = isExoticFilterEnabled();
+  // Nouveautés reliées par le titre après coup : les rangées « cette semaine » se recalculent
+  const [recentVersion, setRecentVersion] = useState(0);
   const thisWeekMovies = useMemo(() => {
     if (!lightIndexes) return [];
     return getThisWeekMovies(lightIndexes, 20, exoticEnabled);
-  }, [lightIndexes, exoticEnabled]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- recentVersion relance le calcul quand des nouveautés sont reliées (le catalogue est modifié sur place)
+  }, [lightIndexes, exoticEnabled, recentVersion]);
 
   const thisWeekSeries = useMemo(() => {
     if (!lightIndexes) return [];
     return getThisWeekSeries(lightIndexes, 20, exoticEnabled);
-  }, [lightIndexes, exoticEnabled]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- recentVersion relance le calcul quand des nouveautés sont reliées (le catalogue est modifié sur place)
+  }, [lightIndexes, exoticEnabled, recentVersion]);
 
   // Rangées installées depuis l'extérieur (actualisation du catalogue) : on les affiche telles
   // quelles, sans passer par l'état « chargement ».
@@ -206,6 +227,22 @@ export function useDashboardData(lightIndexes: LightIndexes | undefined): UseDas
 
       const t0 = performance.now();
       try {
+        // Sans compte ni clé TMDB personnelle : l'accueil ne garde que les rangées du fournisseur
+        // (reprises, Ma liste, nouveautés de la semaine). Rien à demander à TMDB, et rien à réessayer
+        // tant que la situation ne change pas : l'accueil recalcule au retour de la clé.
+        if (!(await isTmdbAvailable())) {
+          if (mounted) {
+            setHeroMovies([]);
+            setTrendingContent([]);
+            setNowPlayingContent([]);
+            setOnTheAirContent([]);
+            setTopRatedContent([]);
+            setPopularContent([]);
+            markDashboardLoaded();
+          }
+          return;
+        }
+
         const getValue = <T,>(result: PromiseSettledResult<T>, fallback: T): T => {
           if (result.status === 'fulfilled') return result.value;
           log.warn('Dashboard content load failed:', result.reason);
@@ -310,6 +347,12 @@ export function useDashboardData(lightIndexes: LightIndexes | undefined): UseDas
       // Clé complète du dernier calcul, gardée dans le cache du module (l'accueil est démonté
       // pendant qu'on choisit les genres dans les Paramètres) : on ne recalcule que si le
       // catalogue, les genres choisis ou la langue ont changé.
+      // Sans compte ni clé TMDB : pas de rangées par genre (elles viennent toutes de TMDB)
+      if (!(await isTmdbAvailable())) {
+        if (mounted) setGenreCarousels(new Map());
+        return;
+      }
+
       const lang = getTmdbLanguage();
       const loadedFor = dashboardCache.genreFor;
       if (loadedFor && loadedFor.lang === lang && loadedFor.genresKey === enabledGenresKey) {
@@ -363,6 +406,47 @@ export function useDashboardData(lightIndexes: LightIndexes | undefined): UseDas
     };
   }, [enabledGenresKey, langVersion, lightIndexes]);
 
+  // Fournisseur sans numéro TMDB : titres des listes de l'accueil retrouvés par le nom, puis rangées
+  // recalculées discrètement (titleTmdbLinks.ts). Rien à faire quand tout est déjà relié.
+  const currentIndexesRef = useRef(lightIndexes);
+  // Compté une fois par catalogue (des centaines de milliers de titres)
+  const withoutTmdb = useMemo(() => (lightIndexes ? mostlyWithoutTmdb(lightIndexes) : false), [lightIndexes]);
+  // Catalogue pour lequel les essais sont finis (relié, ou plus d'essai prévu)
+  const [linkingDoneFor, setLinkingDoneFor] = useState<LightIndexes | null>(null);
+  useEffect(() => {
+    currentIndexesRef.current = lightIndexes;
+    if (!lightIndexes || loadingHero) return;
+    let cancelled = false;
+    const timers: ReturnType<typeof setTimeout>[] = [];
+    const waits = withoutTmdb;
+    const stillCurrent = () => !cancelled && currentIndexesRef.current === lightIndexes;
+    const attempt = (index: number) => {
+      void linkHomeTitlesAndRefresh(lightIndexes, stillCurrent).then((linked) => {
+        if (!stillCurrent()) return;
+        const next = TITLE_LINKS_TIMING.retryMs[index];
+        // Rien relié et d'autres essais prévus : les listes n'étaient peut-être pas encore là
+        // (une comparaison déjà faite, même sans nouveau lien, met fin aux essais)
+        if (linked === 0 && waits && !titleLinksSettled(lightIndexes) && next !== undefined) timers.push(setTimeout(() => attempt(index + 1), next));
+        else {
+          exhaustedCatalogs.add(lightIndexes.movies);
+          setLinkingDoneFor(lightIndexes);
+          // Catalogue sans numéros : les nouveautés de la semaine sont cherchées par le titre
+          if (waits) {
+            void linkRecentByTitle(lightIndexes, stillCurrent).then((n) => {
+              if (n > 0 && currentIndexesRef.current === lightIndexes) setRecentVersion((v) => v + 1);
+            });
+          }
+        }
+      });
+    };
+    timers.push(setTimeout(() => attempt(0), TITLE_LINKS_TIMING.firstMs));
+    return () => {
+      cancelled = true;
+      timers.forEach(clearTimeout);
+    };
+  }, [lightIndexes, loadingHero, genreCarousels, withoutTmdb]);
+  const linkingTitles = withoutTmdb && !loadingHero && linkingDoneFor !== lightIndexes && !(lightIndexes && exhaustedCatalogs.has(lightIndexes.movies));
+
   return {
     trendingContent,
     nowPlayingContent,
@@ -375,5 +459,6 @@ export function useDashboardData(lightIndexes: LightIndexes | undefined): UseDas
     carouselPrefs,
     thisWeekMovies,
     thisWeekSeries,
+    linkingTitles,
   };
 }

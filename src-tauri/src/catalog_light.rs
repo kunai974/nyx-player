@@ -26,7 +26,7 @@ use serde_json::Value;
 use std::collections::HashMap;
 use tauri::Manager;
 
-use crate::storage::{sanitize_error_path, validate_db_name};
+use crate::storage::{sanitize_error_path, validate_catalog_db_name};
 
 #[derive(Serialize, Default)]
 #[serde(rename_all = "camelCase")]
@@ -240,10 +240,11 @@ fn open_read_only(path: &std::path::Path) -> rusqlite::Result<Connection> {
     Ok(conn)
 }
 
-/// Commande : catalogue compact de la base de l'utilisateur (`nyxplayer_<uid>.db`), en lecture seule.
+/// Commande : catalogue compact, en lecture seule, de la base du compte (`nyxplayer_<uid>.db`) ou
+/// du fichier catalogue d'une source (`nyxcat_<espace>_<source>.db`).
 #[tauri::command]
 pub async fn load_light_catalog(app: tauri::AppHandle, db_name: String) -> Result<LightCatalog, String> {
-    validate_db_name(&db_name)?;
+    validate_catalog_db_name(&db_name)?;
     let db_path = app
         .path()
         .app_data_dir()

@@ -43,7 +43,7 @@
             <a href="legal.html">Legal</a>
         </nav>
 
-        <p class="legal-updated">Last updated: October 12, 2026</p>
+        <p class="legal-updated">Last updated: November 7, 2026</p>
 
         <div class="legal-content">
             <h2>1. Who We Are</h2>
@@ -65,7 +65,8 @@
                 <li><strong>IPTV credentials</strong> (server address, username, password) — stored
                     encrypted on your device: in the Windows Credential Manager on Windows, and with a
                     non-exportable Android Keystore key (AES-256-GCM) on Android. <strong>They are never
-                    sent to our servers.</strong></li>
+                    sent to our servers</strong>, except encrypted and unreadable to us if you connect a
+                    TV with your phone (see section 9).</li>
                 <li><strong>Local database</strong> — your provider's catalog (channels, films, series),
                     the TV guide if you enable it, your watchlist, playback progress, favorites and
                     settings, in a SQLite database on your device (one per account).</li>
@@ -226,6 +227,31 @@
                 text between your device and your provider. This depends on your provider, not on
                 Nyx Player.
             </p>
+
+            <h3>Connecting a TV with your phone (QR code)</h3>
+            <ul>
+                <li><strong>What is sent</strong>: what you type on the nyxplayer.app/tv page, that is
+                    your Nyx account (email and password) and, if you fill it in, your IPTV
+                    provider.</li>
+                <li><strong>Encryption</strong>: on your phone, before anything is sent, with a key the
+                    TV creates for that code only; the key that can read it never leaves the TV. The
+                    part of the QR code link that carries the TV's key (after the "#") is not sent to
+                    our website by your browser. Method: ECDH P-256, AES-256-GCM.</li>
+                <li><strong>Transport</strong>: the encrypted message goes through the real-time
+                    messaging of our provider Supabase, on a channel with a random name. It is passed
+                    straight to the TV without being stored in our database; neither we nor Supabase
+                    can read it.</li>
+                <li><strong>Duration</strong>: the channel only exists while the TV shows the code, 10
+                    minutes at most (5 on the provider screen). The TV closes it as soon as it has
+                    signed in or when you leave the screen. The code works once.</li>
+                <li><strong>Logs</strong>: as with any visit to an online service, the technical logs
+                    of Supabase and of our web host may record that a connection took place (time, IP
+                    address, device). What you typed is not in them in readable form.</li>
+                <li><strong>Afterwards</strong>: the TV keeps your credentials as if you had typed them
+                    with the remote (see section 2). The page keeps nothing; your browser may still
+                    offer to save the password, as on any form. The code of the page is public:
+                    <a href="https://github.com/kunai974/nyx-player/tree/main/web/tv">github.com/kunai974/nyx-player</a>.</li>
+            </ul>
 
             <h2>10. How Long We Keep Data</h2>
             <ul>

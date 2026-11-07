@@ -62,6 +62,8 @@ fn ts_auto_repairs() -> Vec<String> {
 /// Ce que l'app actuelle exécute sur la base d'un compte : ouverture par la page (dbCore.ts),
 /// puis par Rust (catalogue `catalog_parser::open_connection`, guide `epg_parser`).
 fn open_like_current_app(conn: &Connection) {
+    // Avant la page : mise à niveau de la clé des catégories (secure_db.rs, nyx_db_load)
+    schema::upgrade_categories_key(conn).expect("clé des catégories");
     conn.execute_batch(merged_schema()).expect("schéma fusionné de dbCore.ts");
     for sql in ts_auto_repairs() {
         let _ = conn.execute(&sql, []);
@@ -319,9 +321,19 @@ fn journal_matches_the_account_schema() {
         "table manquante : epg_kept_channels",
         "table manquante : hidden_categories",
         "table manquante : picon_cache",
+        // Liste des sources (multi-sources, PR 1) : dbCore.ts seulement, la base perso
+        "table manquante : iptv_sources",
+        // Liens TMDB trouvés par le titre (listes M3U) : dbCore.ts et schema.rs, comme le catalogue
+        "table manquante : m3u_tmdb_links",
+        // Affiches TMDB des titres reliés par leur nom : dbCore.ts seulement, la base perso (cache)
+        "table manquante : title_tmdb_posters",
         "colonne manquante : live.geo_hint",
         "colonne manquante : live.match_method",
         "colonne manquante : live.matched_epg_id",
+        // Clé (type, numéro) des catégories : hors journal, posée sur les bases d'avant par
+        // schema::upgrade_categories_key à l'ouverture
+        "colonne différente : categories.id (Column { name: \"id\", decl_type: \"TEXT\", not_null: false, default: None, pk: 1 } au lieu de Column { name: \"id\", decl_type: \"TEXT\", not_null: true, default: None, pk: 2 })",
+        "colonne différente : categories.type (Column { name: \"type\", decl_type: \"TEXT\", not_null: true, default: None, pk: 0 } au lieu de Column { name: \"type\", decl_type: \"TEXT\", not_null: true, default: None, pk: 1 })",
         // Index du guide remplacé hors journal (schema.rs, EPG_TABLES)
         "index en trop : idx_epg_channel_start",
         "index manquant : idx_epg_channel_stop",

@@ -38,13 +38,20 @@ const LS_KEY = 'nyx_last_signup_ts';
 
 type AuthMode = 'login' | 'register';
 
-const SupabaseAuthPage: React.FC = () => {
-    const { signIn, signUp, sessionExpired } = useSupabaseAuth();
+interface SupabaseAuthPageProps {
+    /** Onglet ouvert à l'arrivée (« Créer un compte » depuis les réglages d'un invité) */
+    initialMode?: AuthMode;
+    /** « Continuer sans compte » : l'app ferme d'abord toute session ouverte (défaut : ouvre l'espace invité) */
+    onContinueAsGuest?: () => void;
+}
+
+const SupabaseAuthPage: React.FC<SupabaseAuthPageProps> = ({ initialMode = 'login', onContinueAsGuest }) => {
+    const { signIn, signUp, sessionExpired, enterGuestMode } = useSupabaseAuth();
     const { t, i18n } = useTranslation(['auth', 'common']);
     const { overrides } = useDevOverrides();
     const dev = overrides.loginPage;
 
-    const [mode, setMode] = useState<AuthMode>('login');
+    const [mode, setMode] = useState<AuthMode>(initialMode);
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
     const [confirmPassword, setConfirmPassword] = useState('');
@@ -570,6 +577,24 @@ const SupabaseAuthPage: React.FC = () => {
                                     : effectiveAuthMode === 'login' ? t('supabase_btn_signin') : t('supabase_btn_register')}
                             </NyxButton>
                         </form>
+
+                        {/* Sans compte : tout reste sur l'appareil (docs/plans/MODE_INVITE_PLAN.md) */}
+                        <div className="supabase-auth__guest">
+                            {/* « ou » : deux chemins au choix, la connexion reste l'action principale */}
+                            <div className="supabase-auth__or" role="separator">
+                                <span>{t('supabase_or')}</span>
+                            </div>
+                            <NyxButton
+                                data-testid="auth-guest"
+                                variant="secondary"
+                                size="sm"
+                                color="blue"
+                                onClick={onContinueAsGuest ?? enterGuestMode}
+                            >
+                                {t('supabase_btn_guest')}
+                            </NyxButton>
+                            <p className="supabase-auth__guest-hint">{t('supabase_guest_hint')}</p>
+                        </div>
                     </>
                 )}
 

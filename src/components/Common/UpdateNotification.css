@@ -96,8 +96,10 @@
     transition: color var(--duration-fast) var(--ease-out);
 }
 
-.update-notification__dismiss:hover {
-    color: var(--text-primary);
+@media (hover: hover) {
+  .update-notification__dismiss:hover {
+      color: var(--text-primary);
+  }
 }
 
 .update-notification__changelog-link {
@@ -110,9 +112,11 @@
     transition: color var(--duration-fast) var(--ease-out);
 }
 
-.update-notification__changelog-link:hover {
-    color: var(--nyx-violet-light);
-    text-decoration: underline;
+@media (hover: hover) {
+  .update-notification__changelog-link:hover {
+      color: var(--nyx-violet-light);
+      text-decoration: underline;
+  }
 }
 
 /* --- Progress bar (matches IPTV refresh style) --- */

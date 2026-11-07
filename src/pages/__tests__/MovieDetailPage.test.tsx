@@ -36,8 +36,10 @@ vi.mock('../../hooks/useTvPageFocus', () => ({ useTvPageFocus: vi.fn() }));
 const setInWatchlist = vi.fn();
 const setHasMovieProgress = vi.fn();
 const handleVersionSelect = vi.fn();
-const source = vi.hoisted(() => ({ value: {} as Record<string, unknown> }));
-vi.mock('../../hooks/useMovieSourceSelection', () => ({ useMovieSourceSelection: () => source.value }));
+const source = vi.hoisted(() => ({ value: {} as Record<string, unknown>, args: null as null | { initialVersions: Array<{ stream_id: number }> } }));
+vi.mock('../../hooks/useMovieSourceSelection', () => ({
+  useMovieSourceSelection: (args: { initialVersions: Array<{ stream_id: number }> }) => { source.args = args; return source.value; },
+}));
 
 vi.mock('../../services/tmdbApi', () => ({
   default: { imageUrl: (path: string, size: string) => `http://exemple.test/${size}${path}` },
@@ -64,7 +66,13 @@ vi.mock('../../components/Lists/ContentCarousel', () => ({
   ),
 }));
 
+vi.mock('../../services/titleTmdbLinks', () => ({
+  linkTitlesByName: vi.fn(async () => 1),
+  mostlyWithoutTmdb: vi.fn(() => false),
+}));
+
 import MovieDetailPage from '../MovieDetailPage';
+import { linkTitlesByName, mostlyWithoutTmdb } from '../../services/titleTmdbLinks';
 import { toggleWatchlistOrNotify } from '../../services/watchlistActions';
 import { clearProgress } from '../../services/playbackProgressService';
 import { setTvMode } from '../../utils/platform';
@@ -93,6 +101,7 @@ const details = {
 };
 
 const catalog = {
+  movies: new Map([[900, { id: 900, name: 'Similaire A', tmdbId: 1 }]]),
   moviesByTmdb: new Map([[1, { id: 900, name: 'Similaire A' }]]),
 } as unknown as LightIndexes;
 
@@ -343,6 +352,70 @@ describe('MovieDetailPage', () => {
       setTvMode(true);
       const { container } = setup();
       expect(container.querySelector('.synopsis-container')).toHaveAttribute('tabindex', '0');
+    });
+  });
+});
+
+describe('MovieDetailPage — numéro trouvé par le titre après l\'ouverture', () => {
+  it('adds the other versions of the same title to the sources', () => {
+    setSource();
+    tmdbState.value = { details: null, resolvedTmdbId: 42, loadingState: 'ready' };
+    const lone = { stream_id: 100, name: 'Elf (2003)' } as unknown as XtreamMovie;
+    const linked = {
+      movies: new Map([
+        [100, { id: 100, name: 'Elf (2003)', tmdbId: 42, containerExt: 'mkv' }],
+        [101, { id: 101, name: 'FR | Elf (2003)', tmdbId: 42, containerExt: 'mp4' }],
+        [102, { id: 102, name: 'Autre', tmdbId: 0, containerExt: 'mkv' }],
+      ]),
+      moviesByTmdb: new Map(),
+    } as unknown as LightIndexes;
+    render(<MovieDetailPage tmdbId={0} versions={[lone]} lightIndexes={linked} onBack={vi.fn()} />);
+    expect(source.args!.initialVersions.map((v) => Number(v.stream_id))).toEqual([100, 101]);
+  });
+
+  it('keeps the versions given at opening when the provider gave the TMDB id', () => {
+    setSource();
+    tmdbState.value = { details: null, resolvedTmdbId: 55, loadingState: 'ready' };
+    const linked = { movies: new Map([[300, { id: 300, name: 'X', tmdbId: 55 }]]), moviesByTmdb: new Map() } as unknown as LightIndexes;
+    render(<MovieDetailPage tmdbId={55} versions={[v1, v2]} lightIndexes={linked} onBack={vi.fn()} />);
+    expect(source.args!.initialVersions).toEqual([v1, v2]);
+  });
+
+  describe('films similaires reliés par leurs titres (catalogue sans numéros TMDB)', () => {
+    beforeEach(() => {
+      vi.mocked(linkTitlesByName).mockClear();
+      setSource();
+      tmdbState.value = { details, resolvedTmdbId: 55, loadingState: 'ready' };
+    });
+    afterEach(() => vi.useRealTimers());
+
+    it('compare les titres conseillés par TMDB au catalogue, un peu après l\'ouverture', async () => {
+      vi.useFakeTimers();
+      vi.mocked(mostlyWithoutTmdb).mockReturnValue(true);
+      setup();
+      expect(linkTitlesByName).not.toHaveBeenCalled();
+      await act(async () => { await vi.advanceTimersByTimeAsync(1600); });
+      expect(linkTitlesByName).toHaveBeenCalledTimes(1);
+      const titles = vi.mocked(linkTitlesByName).mock.calls[0][1];
+      expect(titles.map((t) => t.tmdbId)).toEqual([1, 2, 3]);
+      expect(titles[0]).toMatchObject({ kind: 'movie', titles: ['Similaire A'] });
+    });
+
+    it('rien à faire quand le fournisseur donne ses numéros', async () => {
+      vi.useFakeTimers();
+      vi.mocked(mostlyWithoutTmdb).mockReturnValue(false);
+      setup();
+      await act(async () => { await vi.advanceTimersByTimeAsync(3000); });
+      expect(linkTitlesByName).not.toHaveBeenCalled();
+    });
+
+    it('fiche quittée avant la comparaison : elle n\'a pas lieu', async () => {
+      vi.useFakeTimers();
+      vi.mocked(mostlyWithoutTmdb).mockReturnValue(true);
+      const { unmount } = setup();
+      unmount();
+      await act(async () => { await vi.advanceTimersByTimeAsync(3000); });
+      expect(linkTitlesByName).not.toHaveBeenCalled();
     });
   });
 });

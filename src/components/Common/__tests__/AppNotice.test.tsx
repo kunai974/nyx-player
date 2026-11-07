@@ -7,7 +7,7 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, screen, act } from '@testing-library/react';
 
 vi.mock('react-i18next', () => ({
-  useTranslation: () => ({ t: (key: string) => `texte:${key}` }),
+  useTranslation: () => ({ t: (key: string, values?: Record<string, string>) => `texte:${key}${values ? JSON.stringify(values) : ''}` }),
 }));
 
 import AppNotice from '../AppNotice';
@@ -48,5 +48,16 @@ describe('AppNotice', () => {
     act(() => showAppNotice('watchlist_update_failed'));
     act(() => { vi.advanceTimersByTime(2000); });
     expect(screen.getByTestId('app-notice')).toHaveTextContent('texte:watchlist_update_failed');
+  });
+
+  it('message avec valeurs et durée propre (connexion par QR code : 10 s)', () => {
+    vi.useFakeTimers();
+    render(<AppNotice />);
+    act(() => showAppNotice('tvlink_connected_account', { values: { email: 'a@b.c' }, ms: 10_000 }));
+    expect(screen.getByTestId('app-notice')).toHaveTextContent('texte:tvlink_connected_account{"email":"a@b.c"}');
+    act(() => { vi.advanceTimersByTime(APP_NOTICE_MS); });
+    expect(screen.getByTestId('app-notice')).not.toBeEmptyDOMElement();
+    act(() => { vi.advanceTimersByTime(10_000 - APP_NOTICE_MS); });
+    expect(screen.getByTestId('app-notice')).toBeEmptyDOMElement();
   });
 });

@@ -11,6 +11,7 @@ import { currentGeneration } from '../syncBaseline';
 import { afterSend } from './afterSend';
 import { sendInBackground } from './sendInBackground';
 import { fitsCloudProviderId } from '../cloudLimits';
+import { providerSyncScope, localKey, ownedRowHashes } from '../providerSync';
 
 /**
  * Fire-and-forget upsert immédiat d'une catégorie masquée vers Supabase.
@@ -21,20 +22,25 @@ export function pushHiddenCategoryToCloud(
   categoryId: string,
   categoryType: string
 ): void {
+  // Tables par fournisseur et fournisseur de l'appareil inconnu : la synchro suivante s'en charge
+  const scope = providerSyncScope('hidden');
   // Numéro démesuré : gardé sur l'appareil, jamais envoyé (la base le refuserait)
-  if (!canSync() || !fitsCloudProviderId(categoryId)) return;
+  if (!canSync() || !scope || !fitsCloudProviderId(categoryId)) return;
 
   const userId = getCurrentSyncUserId()!;
-  const generation = currentGeneration('hidden');
+  const generation = currentGeneration(scope.baselineScope);
   sendInBackground(
     supabase
-      .from('user_hidden_categories')
+      .from(scope.table)
       .upsert(
-        { user_id: userId, category_id: categoryId, category_type: categoryType, provider_hash: getLastProviderHash() },
-        { onConflict: 'user_id,category_id,category_type' }
+        {
+          user_id: userId, category_id: categoryId, category_type: categoryType,
+          provider_hash: scope.on ? scope.deviceHash : getLastProviderHash(),
+        },
+        { onConflict: scope.on ? 'user_id,provider_hash,category_id,category_type' : 'user_id,category_id,category_type' }
       ),
     'hidden category upsert',
-    () => afterSend(userId, 'hidden', generation, { set: [[`${categoryId}::${categoryType}`, 0]] }),
+    () => afterSend(userId, scope.baselineScope, generation, { set: [[localKey(scope, `${categoryId}::${categoryType}`), 0]] }),
   );
 }
 
@@ -48,18 +54,22 @@ export function pushHiddenCategoryDeleteToCloud(
   categoryId: string,
   categoryType: string
 ): void {
-  if (!canSync()) return;
+  const scope = providerSyncScope('hidden');
+  if (!canSync() || !scope) return;
 
   const userId = getCurrentSyncUserId()!;
-  const generation = currentGeneration('hidden');
+  const generation = currentGeneration(scope.baselineScope);
+  let request = supabase
+    .from(scope.table)
+    .delete()
+    .eq('user_id', userId)
+    .eq('category_id', categoryId)
+    .eq('category_type', categoryType);
+  // Ses lignes seulement, copie sans empreinte comprise (sync/providerSync.ts)
+  if (scope.on) request = request.in('provider_hash', ownedRowHashes(scope));
   sendInBackground(
-    supabase
-      .from('user_hidden_categories')
-      .delete()
-      .eq('user_id', userId)
-      .eq('category_id', categoryId)
-      .eq('category_type', categoryType),
+    request,
     'hidden category delete',
-    () => afterSend(userId, 'hidden', generation, { remove: [`${categoryId}::${categoryType}`] }),
+    () => afterSend(userId, scope.baselineScope, generation, { remove: [localKey(scope, `${categoryId}::${categoryType}`)] }),
   );
 }

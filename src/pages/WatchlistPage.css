@@ -172,9 +172,11 @@
   white-space: nowrap;
 }
 
-.watchlist-error__retry:hover {
-  background: rgba(239, 68, 68, 0.35);
-  border-color: rgba(239, 68, 68, 0.6);
+@media (hover: hover) {
+  .watchlist-error__retry:hover {
+    background: rgba(239, 68, 68, 0.35);
+    border-color: rgba(239, 68, 68, 0.6);
+  }
 }
 
 /* ---- Watchlist Grid ---- */
@@ -199,11 +201,13 @@
   border: 1px solid var(--border-subtle);
 }
 
-.watchlist-card:hover {
-  transform: translateY(-0.5rem) scale(1.03);
-  box-shadow: 0 0.5rem 2rem rgba(0, 0, 0, 0.4), 0 0 1.25rem rgba(104, 23, 23, 0.5);
-  border-color: rgba(104, 23, 23, 0.8);
-  z-index: var(--z-dropdown);
+@media (hover: hover) {
+  .watchlist-card:hover {
+    transform: translateY(-0.5rem) scale(1.03);
+    box-shadow: 0 0.5rem 2rem rgba(0, 0, 0, 0.4), 0 0 1.25rem rgba(104, 23, 23, 0.5);
+    border-color: rgba(104, 23, 23, 0.8);
+    z-index: var(--z-dropdown);
+  }
 }
 
 /* ---- Poster ---- */
@@ -221,8 +225,10 @@
   transition: transform var(--duration-normal) var(--ease-out);
 }
 
-.watchlist-card:hover .poster-container img {
-  transform: scale(1.05);
+@media (hover: hover) {
+  .watchlist-card:hover .poster-container img {
+    transform: scale(1.05);
+  }
 }
 
 /* ---- Type Badge ---- */
@@ -261,9 +267,11 @@
               transform var(--duration-normal) var(--ease-out);
 }
 
-.watchlist-card:hover .card-watchlist-btn {
-  opacity: 1;
-  transform: scale(1);
+@media (hover: hover) {
+  .watchlist-card:hover .card-watchlist-btn {
+    opacity: 1;
+    transform: scale(1);
+  }
 }
 
 /* ---- Progress bar (movies) ---- */
@@ -313,10 +321,12 @@
   filter: grayscale(0.6);
 }
 
-.watchlist-card--unavailable:hover {
-  transform: none;
-  box-shadow: none;
-  border-color: var(--border-subtle);
+@media (hover: hover) {
+  .watchlist-card--unavailable:hover {
+    transform: none;
+    box-shadow: none;
+    border-color: var(--border-subtle);
+  }
 }
 
 .unavailable-badge {

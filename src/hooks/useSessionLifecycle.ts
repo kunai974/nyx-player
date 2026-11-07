@@ -41,6 +41,9 @@ import {
 import type { XtreamUserInfo } from '../types/xtream';
 import { normalizeProviderHost, sameProviderHost } from '../utils/providerHost';
 import { checkLocalDatabase, isDatabaseDamagedError, isLocalDatabaseDamaged } from '../services/localDatabaseHealth';
+import { isM3uListCredentials } from '../services/sources/m3uListCredentials';
+import { isLocalM3uMissingError } from '../services/sources/m3uLocalFile';
+import { providerTablesOn } from '../services/sync/cloudScope';
 import { createLogger } from '../utils/logger';
 
 const log = createLogger('Session');
@@ -179,6 +182,7 @@ export function useSessionLifecycle(
             if (!stillCurrent()) { abandon('la session a changé pendant le contrôle de la base'); return; }
             // Serveur du fournisseur en panne ou injoignable : ne pas faire croire à des identifiants faux
             setSessionError(t(damaged ? 'common:local_db_damaged_error'
+                : isLocalM3uMissingError(error) ? 'auth:error_m3u_file_missing'
                 : isProviderServerError(error) ? 'auth:error_provider_unavailable'
                 : isProviderCertificateError(error) ? 'auth:error_provider_certificate'
                 : isProviderHtmlResponseError(error) ? 'auth:error_provider_html'
@@ -364,6 +368,9 @@ export function useSessionLifecycle(
                 try {
                     const { data: { session: supaSession } } = await supabase.auth.getSession();
                     if (supaSession?.user) {
+                        // Tables par fournisseur : un autre fournisseur noté dans le cloud n'est pas un
+                        // changement de celui de cet appareil (sync/cloudScope.ts)
+                        if (providerTablesOn()) return false;
                         const cloudHash = await fetchCloudProviderHash(supaSession.user.id);
                         // Même serveur écrit autrement (« / » final, majuscule) : pas un changement
                         if (cloudHash && !(await findKnownProviderSpelling(cloudHash, savedCreds.host, await getMeta('lastProvider')))) {
@@ -453,7 +460,8 @@ export function useSessionLifecycle(
             // connexions) ne servent qu'à la carte « Compte » des Paramètres.
             // Réponse arrivée après une déconnexion ou un changement de compte : ignorée, sinon la carte
             // « Compte » montrerait les infos de la session fermée
-            new XtreamApiService(savedCreds).authenticate()
+            // Liste M3U : pas de compte chez un fournisseur Xtream à interroger
+            if (!isM3uListCredentials(savedCreds)) new XtreamApiService(savedCreds).authenticate()
                 .then((authResult) => { if (stillCurrent()) setAccountInfo(authResult.user_info); })
                 .catch((e) => {
                     // Abonnement expiré ou suspendu : la carte « Compte » affiche quand même son état
@@ -717,6 +725,12 @@ export function useSessionLifecycle(
             setPendingProviderChange({ from: credentials.host, to: newCreds.host, creds: newCreds });
             return;
         }
+        // Même liste M3U (même hôte) à une autre adresse : relue en entier, comme une connexion
+        // (même fournisseur, ses données sont gardées)
+        if (isM3uListCredentials(newCreds)) {
+            await login(newCreds);
+            return;
+        }
         // Même host → simple re-auth
         const api = new XtreamApiService(newCreds);
         const authResult = await api.authenticate();
@@ -725,7 +739,7 @@ export function useSessionLifecycle(
         await StorageService.saveCredentials(newCreds);
         updateAutoRefreshCredentials(newCreds);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- setters de la session (useState) stables, reçus en paramètre : la règle ne les reconnaît pas
-    }, [credentials]);
+    }, [credentials, login]);
 
     /** Confirmer ou annuler un changement de provider détecté */
     const confirmProviderChange = useCallback(async (accepted: boolean): Promise<void> => {

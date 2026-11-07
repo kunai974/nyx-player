@@ -13,6 +13,7 @@
 import Database from './nyxDatabase';
 import { WATCHLIST_EVENT } from './eventConstants';
 import { bumpGeneration } from './sync/syncBaseline';
+import { bothBaselineScopes } from './sync/cloudScope';
 import { createLogger } from '../utils/logger';
 
 const log = createLogger('SQLite');
@@ -371,7 +372,7 @@ export async function clearAllData(): Promise<void> {
   const database = await getDatabase();
   // Une synchro de Ma liste en cours ne peut plus réécrire le dernier accord effacé ci-dessous :
   // Ma liste vide + dernier accord rétabli = titres retirés du cloud
-  bumpGeneration(['watchlist']);
+  bumpGeneration(bothBaselineScopes('watchlist'));
   try { await database.execute('DELETE FROM movies'); } catch { /* table may not exist */ }
   try { await database.execute('DELETE FROM series'); } catch { /* table may not exist */ }
   try { await database.execute('DELETE FROM live'); } catch { /* table may not exist */ }
@@ -379,7 +380,8 @@ export async function clearAllData(): Promise<void> {
   try { await database.execute('DELETE FROM watchlist'); } catch { /* table may not exist */ }
   // Ma liste vidée en local : son dernier accord avec le cloud ne vaut plus (sinon la synchro
   // suivante prendrait ce vide pour des retraits et viderait Ma liste du cloud, sync/syncBaseline.ts)
-  try { await database.execute(`DELETE FROM meta WHERE key = 'sync_baseline:watchlist'`); } catch { /* table may not exist */ }
+  // Les deux derniers accords de Ma liste : tables du cloud d'une seule source et par fournisseur
+  try { await database.execute(`DELETE FROM meta WHERE key IN ('sync_baseline:watchlist', 'sync_baseline:watchlist_v2')`); } catch { /* table may not exist */ }
   // « Ma liste » vidée : la mémoire de watchlistHydration et les cartes se mettent à jour
   window.dispatchEvent(new CustomEvent(WATCHLIST_EVENT));
 }
@@ -456,6 +458,16 @@ const MERGED_SCHEMA = `
     sort_order INTEGER DEFAULT 0
   );
   CREATE INDEX IF NOT EXISTS idx_series_tmdb ON series(tmdb_id);
+
+  -- Liens TMDB trouvés par le titre pour une liste M3U (même table côté Rust, schema.rs)
+  CREATE TABLE IF NOT EXISTS m3u_tmdb_links (
+    kind TEXT NOT NULL,
+    id INTEGER NOT NULL,
+    name TEXT NOT NULL,
+    tmdb_id INTEGER NOT NULL,
+    checked_at INTEGER NOT NULL,
+    PRIMARY KEY (kind, id)
+  );
   CREATE INDEX IF NOT EXISTS idx_series_category ON series(category_id);
 
   CREATE TABLE IF NOT EXISTS live (
@@ -472,11 +484,14 @@ const MERGED_SCHEMA = `
   );
   CREATE INDEX IF NOT EXISTS idx_live_category ON live(category_id);
 
+  -- Clé (type, numéro) : des fournisseurs numérotent chaque type à part. Bases d'avant mises à
+  -- niveau par le Rust à l'ouverture (schema.rs, upgrade_categories_key)
   CREATE TABLE IF NOT EXISTS categories (
-    id TEXT PRIMARY KEY,
+    id TEXT NOT NULL,
     name TEXT NOT NULL,
     type TEXT NOT NULL,
-    sort_order INTEGER DEFAULT 0
+    sort_order INTEGER DEFAULT 0,
+    PRIMARY KEY (type, id)
   );
 
   -- ===== Metadata =====
@@ -516,6 +531,14 @@ const MERGED_SCHEMA = `
     ON tmdb_details_cache(tmdb_id, type, display_name, poster_path);
   CREATE INDEX IF NOT EXISTS idx_tmdb_cache_cleanup
     ON tmdb_details_cache(cached_at, is_referenced);
+
+  -- Affiche TMDB des titres reliés par leur nom (listes sans image) : notée lors de la recherche, sans demande en plus
+  CREATE TABLE IF NOT EXISTS title_tmdb_posters (
+    kind TEXT NOT NULL,
+    tmdb_id INTEGER NOT NULL,
+    poster_path TEXT NOT NULL,
+    PRIMARY KEY (kind, tmdb_id)
+  );
 
   CREATE TABLE IF NOT EXISTS cache_lists (
     cache_key TEXT PRIMARY KEY,
@@ -597,6 +620,21 @@ const MERGED_SCHEMA = `
     category_id TEXT NOT NULL,
     type TEXT NOT NULL,
     PRIMARY KEY (category_id, type)
+  );
+
+  -- ===== Sources IPTV (services/sources/sourceRegistry.ts) =====
+  -- Partie affichable seulement : identifiants et adresses complètes restent au coffre
+
+  CREATE TABLE IF NOT EXISTS iptv_sources (
+    id TEXT PRIMARY KEY NOT NULL,
+    name TEXT NOT NULL,
+    kind TEXT NOT NULL CHECK(kind IN ('xtream', 'm3u')),
+    host_label TEXT NOT NULL DEFAULT '',
+    provider_hash TEXT NOT NULL,
+    sort_order INTEGER NOT NULL DEFAULT 0,
+    show_in_catalog INTEGER NOT NULL DEFAULT 1,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
   );
 
   -- ===== Picon cache =====

@@ -48,4 +48,17 @@ class StreamDiagnosticsTest {
         assertEquals("load failed http=458", StreamDiagnostics.redact("load failed http=458"))
         assertFalse(StreamDiagnostics.redact("hostname=tv.example.invalid").contains("example"))
     }
+
+    @Test
+    fun `description d'une adresse, type de contenu et extension seulement`() {
+        assertEquals("movie · mkv", StreamDiagnostics.describeUrl("http://h.invalid/movie/u/p/12.mkv"))
+        assertEquals("live · ts", StreamDiagnostics.describeUrl("https://h.invalid:8080/live/u/p/7.ts?token=x#frag"))
+        assertEquals("series · ?", StreamDiagnostics.describeUrl("http://h.invalid/series/u/p/3"))
+        assertEquals("stream · m3u8", StreamDiagnostics.describeUrl("http://192.0.2.1/hls/index.m3u8"))
+        // Sans chemin, ou pas une adresse : rien d'exploitable
+        assertEquals("stream · ?", StreamDiagnostics.describeUrl("http://h.invalid"))
+        assertEquals("stream · ?", StreamDiagnostics.describeUrl("pas une adresse"))
+        // Le point de l'hôte n'est pas une extension
+        assertEquals("", StreamDiagnostics.urlPath("http://h.invalid?x=1.mkv"))
+    }
 }

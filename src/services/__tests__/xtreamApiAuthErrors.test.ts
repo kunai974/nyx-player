@@ -6,9 +6,10 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 const iptvFetchMock = vi.fn<(url: string) => Promise<string>>();
+const iptvFetchPublicMock = vi.fn<(url: string) => Promise<string>>();
 vi.mock('../networkService', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../networkService')>();
-  return { ...actual, iptvFetch: (url: string) => iptvFetchMock(url) };
+  return { ...actual, iptvFetch: (url: string) => iptvFetchMock(url), iptvFetchPublic: (url: string) => iptvFetchPublicMock(url) };
 });
 
 import { XtreamApiService, isCredentialsRejectedError, isProviderHtmlResponseError } from '../xtreamApi';
@@ -27,6 +28,18 @@ async function authError(): Promise<unknown> {
 describe('XtreamApiService.authenticate : mauvais mot de passe ou serveur en panne', () => {
   beforeEach(() => {
     iptvFetchMock.mockReset();
+    iptvFetchPublicMock.mockReset();
+  });
+
+  it('serveur reçu d\'un autre appareil : toutes les demandes, sonde comprise, passent par le chemin « adresses publiques seulement »', async () => {
+    iptvFetchPublicMock.mockImplementation(async (url) => {
+      if (isAuthUrl(url)) throw 'provider_server_error: HTTP 520';
+      return '<html>nginx</html>';
+    });
+    const error = await new XtreamApiService(creds, { publicOnly: true }).authenticate().catch((e: unknown) => e);
+    expect(isCredentialsRejectedError(error)).toBe(true);
+    expect(iptvFetchPublicMock).toHaveBeenCalledTimes(2);
+    expect(iptvFetchMock).not.toHaveBeenCalled();
   });
 
   afterEach(() => {

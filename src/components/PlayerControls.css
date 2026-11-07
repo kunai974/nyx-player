@@ -56,7 +56,7 @@
 
 /* When Smart Lock is active, disable all interactions */
 .player-controls-layer.locked {
-  pointer-events: none !important;
+  pointer-events: none;
 }
 
 /* Loading spinner - Independent of controls visibility */
@@ -164,8 +164,10 @@
   transition: background var(--duration-fast) var(--ease-out);
 }
 
-.player-close-btn:hover {
-  background: var(--border-strong);
+@media (hover: hover) {
+  .player-close-btn:hover {
+    background: var(--border-strong);
+  }
 }
 
 /* Bottom bar */
@@ -199,8 +201,10 @@
   transition: height var(--duration-fast);
 }
 
-.player-progress-container:hover .player-progress-bg {
-  height: 0.375rem;
+@media (hover: hover) {
+  .player-progress-container:hover .player-progress-bg {
+    height: 0.375rem;
+  }
 }
 
 .player-progress-fill {
@@ -222,8 +226,10 @@
   transition: opacity var(--duration-fast);
 }
 
-.player-progress-container:hover .player-progress-handle {
-  opacity: 1;
+@media (hover: hover) {
+  .player-progress-container:hover .player-progress-handle {
+    opacity: 1;
+  }
 }
 
 /* Controls row */
@@ -278,8 +284,10 @@
   pointer-events: none;
 }
 
-.player-btn:hover {
-  background: var(--active-overlay);
+@media (hover: hover) {
+  .player-btn:hover {
+    background: var(--active-overlay);
+  }
 }
 
 /* Bouton Spécial: Épisodes (Pill Button) */
@@ -294,8 +302,10 @@
   gap: 0.5rem;
 }
 
-.episode-trigger-btn:hover {
-  background: rgba(255, 255, 255, 0.2);
+@media (hover: hover) {
+  .episode-trigger-btn:hover {
+    background: rgba(255, 255, 255, 0.2);
+  }
 }
 
 .episode-trigger-btn.active {
@@ -453,8 +463,10 @@
   transition: background var(--duration-fast) var(--ease-out);
 }
 
-.speed-item:hover {
-  background: var(--active-overlay);
+@media (hover: hover) {
+  .speed-item:hover {
+    background: var(--active-overlay);
+  }
 }
 
 .speed-item.active {
@@ -537,9 +549,11 @@
   transition: background var(--duration-fast) var(--ease-out);
 }
 
-.popup-item:hover {
-  background: var(--active-overlay);
-  color: var(--text-primary);
+@media (hover: hover) {
+  .popup-item:hover {
+    background: var(--active-overlay);
+    color: var(--text-primary);
+  }
 }
 
 .popup-item.active {
@@ -601,8 +615,10 @@
   transition: transform var(--duration-fast);
 }
 
-.scale-slider::-webkit-slider-thumb:hover {
-  transform: scale(1.2);
+@media (hover: hover) {
+  .scale-slider::-webkit-slider-thumb:hover {
+    transform: scale(1.2);
+  }
 }
 
 .scale-value {
@@ -660,11 +676,13 @@
 }
 
 /* Hover State (Both locked/unlocked) */
-.player-lock-btn-fixed:hover {
-  background: var(--border-glass);
-  color: var(--text-primary);
-  border-color: var(--text-icon);
-  transform: scale(1.05);
+@media (hover: hover) {
+  .player-lock-btn-fixed:hover {
+    background: var(--border-glass);
+    color: var(--text-primary);
+    border-color: var(--text-icon);
+    transform: scale(1.05);
+  }
 }
 
 /* Locked State - Just change opacity/color slightly if needed, but keep neutral */
@@ -676,7 +694,9 @@
   /* User request: 50% opacity when locked */
 }
 
-.player-lock-btn-fixed.locked:hover {
-  opacity: 1;
-  /* User request: 100% opacity on hover */
+@media (hover: hover) {
+  .player-lock-btn-fixed.locked:hover {
+    opacity: 1;
+    /* User request: 100% opacity on hover */
+  }
 }

@@ -9,6 +9,7 @@ import { currentGeneration } from '../syncBaseline';
 import { afterSend } from './afterSend';
 import { sendInBackground } from './sendInBackground';
 import { fitsCloudProviderId } from '../cloudLimits';
+import { providerSyncScope, localKey, ownedRowHashes } from '../providerSync';
 
 /**
  * Hard DELETE immédiat d'un bookmark Live TV de Supabase (fire-and-forget).
@@ -19,19 +20,24 @@ export function pushLiveTvBookmarkDeleteToCloud(
   bookmarkType: 'favorite' | 'pinned_category',
   itemId: string
 ): void {
-  if (!canSync()) return;
+  // Tables par fournisseur et fournisseur de l'appareil inconnu : la synchro suivante s'en charge
+  const scope = providerSyncScope('livetv');
+  if (!canSync() || !scope) return;
 
   const userId = getCurrentSyncUserId()!;
-  const generation = currentGeneration('livetv');
+  const generation = currentGeneration(scope.baselineScope);
+  let request = supabase
+    .from(scope.table)
+    .delete()
+    .eq('user_id', userId)
+    .eq('bookmark_type', bookmarkType)
+    .eq('item_id', itemId);
+  // Ses lignes seulement, copie sans empreinte comprise (sync/providerSync.ts)
+  if (scope.on) request = request.in('provider_hash', ownedRowHashes(scope));
   sendInBackground(
-    supabase
-      .from('user_livetv_bookmarks')
-      .delete()
-      .eq('user_id', userId)
-      .eq('bookmark_type', bookmarkType)
-      .eq('item_id', itemId),
+    request,
     'liveTv bookmark delete',
-    () => afterSend(userId, 'livetv', generation, { remove: [`${bookmarkType}::${itemId}`] }),
+    () => afterSend(userId, scope.baselineScope, generation, { remove: [localKey(scope, `${bookmarkType}::${itemId}`)] }),
   );
 }
 
@@ -43,19 +49,23 @@ export function pushLiveTvBookmarkUpsertToCloud(
   bookmarkType: 'favorite' | 'pinned_category',
   itemId: string
 ): void {
+  const scope = providerSyncScope('livetv');
   // Numéro démesuré : gardé sur l'appareil, jamais envoyé (la base le refuserait)
-  if (!canSync() || !fitsCloudProviderId(itemId)) return;
+  if (!canSync() || !scope || !fitsCloudProviderId(itemId)) return;
 
   const userId = getCurrentSyncUserId()!;
-  const generation = currentGeneration('livetv');
+  const generation = currentGeneration(scope.baselineScope);
   sendInBackground(
     supabase
-      .from('user_livetv_bookmarks')
+      .from(scope.table)
       .upsert(
-        { user_id: userId, bookmark_type: bookmarkType, item_id: itemId, provider_hash: getLastProviderHash() },
-        { onConflict: 'user_id,bookmark_type,item_id' }
+        {
+          user_id: userId, bookmark_type: bookmarkType, item_id: itemId,
+          provider_hash: scope.on ? scope.deviceHash : getLastProviderHash(),
+        },
+        { onConflict: scope.on ? 'user_id,provider_hash,bookmark_type,item_id' : 'user_id,bookmark_type,item_id' }
       ),
     'liveTv bookmark upsert',
-    () => afterSend(userId, 'livetv', generation, { set: [[`${bookmarkType}::${itemId}`, 0]] }),
+    () => afterSend(userId, scope.baselineScope, generation, { set: [[localKey(scope, `${bookmarkType}::${itemId}`), 0]] }),
   );
 }

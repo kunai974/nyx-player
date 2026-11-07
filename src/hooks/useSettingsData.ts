@@ -5,6 +5,7 @@ import { clearProgressByType } from '../services/playbackProgressService';
 import { performFullReset, CloudPurgeError } from '../services/fullResetService';
 import type { ResetOptions } from '../types/common';
 import { warnOnReject } from '../utils/warnOnReject';
+import { showAppNotice } from '../utils/appNotice';
 
 // ============================================================================
 // TYPES
@@ -101,7 +102,13 @@ export function useSettingsData() {
 
     if (options.positions) {
       const targetType = type === 'movies' ? 'movie' : 'episode';
-      count = await clearProgressByType(targetType as 'movie' | 'episode');
+      try {
+        count = await clearProgressByType(targetType as 'movie' | 'episode');
+      } catch {
+        // Base occupée : pas de message de réussite trompeur, la fenêtre reste ouverte pour réessayer.
+        showAppNotice('progress_reset_failed');
+        return;
+      }
     }
 
     if (options.cache) {

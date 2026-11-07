@@ -159,7 +159,7 @@ describe('AccountSection — nom du profil', () => {
     render(<AccountSection profileName="Salon" />);
     click('account_change', 0);
     click('account_save');
-    expect(screen.getByText('Profile ID missing')).toBeTruthy();
+    expect(screen.getByText('unexpected_error')).toBeTruthy();
   });
 
   it('renomme avec le nom sans espaces autour, ferme le formulaire et prévient la page', async () => {

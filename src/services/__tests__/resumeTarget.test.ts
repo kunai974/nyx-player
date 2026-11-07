@@ -4,6 +4,7 @@
  */
 import { describe, it, expect } from 'vitest';
 import { resolveResumeTarget } from '../resumeTarget';
+import { markStaleTitleLink } from '../../utils/lightIndexHelpers';
 import type { LightIndexes } from '../../types/lightIndex';
 
 const entry = (id: number, tmdbId: number) => ({ id, tmdbId });
@@ -31,6 +32,15 @@ describe('resolveResumeTarget', () => {
   it('garde le numéro enregistré sans rien à comparer (catalogue absent, reprise ou entrée sans TMDB)', () => {
     expect(resolveResumeTarget(film, undefined)).toEqual({ kind: 'as-saved' });
     expect(resolveResumeTarget({ ...film, tmdbId: null }, indexes([entry(100, 2)]))).toEqual({ kind: 'as-saved' });
+    expect(resolveResumeTarget(film, indexes([entry(100, 0)]))).toEqual({ kind: 'as-saved' });
+  });
+
+  it('entrée sans numéro dont le lien par le titre a été perdu à un changement de nom : introuvable, jamais l\'ancien film', () => {
+    // Le fournisseur a redonné ce numéro à un autre titre : la reprise de Dune ne doit pas lancer Barbie
+    const barbie = entry(100, 0);
+    markStaleTitleLink(barbie);
+    expect(resolveResumeTarget(film, indexes([barbie]))).toEqual({ kind: 'unavailable' });
+    // Sans marque (jamais relié), rien à comparer : lecture comme avant
     expect(resolveResumeTarget(film, indexes([entry(100, 0)]))).toEqual({ kind: 'as-saved' });
   });
 

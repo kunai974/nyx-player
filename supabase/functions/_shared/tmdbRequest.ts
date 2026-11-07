@@ -67,3 +67,50 @@ export function mayWriteCache(rowExists: boolean, rowCount: number | null, entry
   if (rowExists) return true;
   return rowCount !== null && rowCount < TMDB_CACHE_MAX_ROWS;
 }
+
+// ---------------------------------------------------------------------------
+// Title searches (the app searches a title when the provider gives no TMDB number)
+// ---------------------------------------------------------------------------
+
+/** Searches get their own row budget: junk queries can never take the places of titles and lists. */
+export const TMDB_SEARCH_CACHE_MAX_ROWS = 1500; // 3000 + 1500 stays under the database's hard limit of 5000 rows
+/** A search answer is at most 20 results (~15 KB); anything bigger is served without being cached. */
+export const TMDB_SEARCH_CACHE_MAX_ENTRY_CHARS = 60_000;
+/** Shorter than a real title or longer than any cleaned title the app sends: never cached. */
+const SEARCH_QUERY_MIN = 2;
+const SEARCH_QUERY_MAX = 80;
+
+/**
+ * Search text as the cache key sees it: Unicode-normalised, lower case, control characters dropped, runs of
+ * spaces collapsed. Null when the text could not be a cleaned title (the answer is then not cached).
+ * The same text is sent to TMDB, so the cached answer is exactly the one TMDB gave for this key.
+ */
+export function normalizeSearchQuery(raw: string): string | null {
+  const text = raw.normalize("NFKC").replace(/[\u0000-\u001f\u007f]/g, " ").replace(/\s+/g, " ").trim().toLowerCase();
+  if (text.length < SEARCH_QUERY_MIN || text.length > SEARCH_QUERY_MAX) return null;
+  return text;
+}
+
+/** One cache row per kind, language, year and normalised text. */
+export function searchCacheKey(kind: "movie" | "tv", language: string, year: string, query: string): string {
+  return `search:${kind}:${language}:${year || "-"}:${query}`;
+}
+
+/** Number of results in a TMDB search answer (0 when the answer has none or is not a search answer). */
+export function searchResultCount(answer: unknown): number {
+  const results = (answer as { results?: unknown } | null)?.results;
+  return Array.isArray(results) ? results.length : 0;
+}
+
+/**
+ * May this search answer be written? Never an answer without result (it helps nobody: the app already
+ * remembers "not found" for 30 days, and a made-up title usually finds nothing). TMDB's fuzzy search can
+ * still answer a made-up title with something, so the budget below is what really bounds the rows: only while the search
+ * budget has room (unknown count = full).
+ */
+export function mayWriteSearchCache(rowExists: boolean, searchRowCount: number | null, entryChars: number, resultCount: number): boolean {
+  if (resultCount < 1) return false;
+  if (entryChars > TMDB_SEARCH_CACHE_MAX_ENTRY_CHARS) return false;
+  if (rowExists) return true;
+  return searchRowCount !== null && searchRowCount < TMDB_SEARCH_CACHE_MAX_ROWS;
+}

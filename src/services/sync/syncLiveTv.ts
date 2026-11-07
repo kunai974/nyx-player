@@ -11,6 +11,8 @@ import { fetchAllRows } from './syncFetch';
 import { readBaseline, updateBaseline, planMerge, canStillWrite, runExclusive } from './syncBaseline';
 import { fitsCloudProviderId } from './cloudLimits';
 import { cloudWriteError } from './cloudRefusal';
+import { providerSyncScope, localKey, cloudKey, itemKeyOf, baselineForScope, ownedRowHashes } from './providerSync';
+import type { ProviderSyncScope } from './providerSync';
 import { createLogger } from '../../utils/logger';
 
 const log = createLogger('Sync');
@@ -19,23 +21,33 @@ const log = createLogger('Sync');
  * Sync Live TV bookmarks : fusion à trois (local, cloud, dernier accord, sync/syncBaseline.ts).
  * Un favori retiré sur un autre appareil est retiré ici au lieu d'être renvoyé, et un
  * retrait ou un ajout dont l'envoi a échoué est rattrapé.
+ * Tables par fournisseur (sync/providerSync.ts) : seulement les favoris du fournisseur de l'appareil.
  */
 export function syncLiveTv(userId: string, result: SyncResult): Promise<void> {
-  return runExclusive('livetv', () => syncLiveTvNow(userId, result));
+  const scope = providerSyncScope('livetv');
+  if (!scope) {
+    log.warn('liveTv: provider of this device unknown, not synced');
+    return Promise.resolve();
+  }
+  return runExclusive(scope.baselineScope, () => syncLiveTvNow(userId, result, scope));
 }
 
-async function syncLiveTvNow(userId: string, result: SyncResult): Promise<void> {
+async function syncLiveTvNow(userId: string, result: SyncResult, scope: ProviderSyncScope): Promise<void> {
   // Dernier accord lu en premier (avant le cloud et le local), voir syncBaseline.readBaseline
-  const baseline = await readBaseline(userId, 'livetv');
+  const baselineRead = await readBaseline(userId, scope.baselineScope);
+  const baseline = Object.assign(baselineForScope(scope, baselineRead), { generation: baselineRead.generation, scope: baselineRead.scope });
   const db = await getDatabase();
 
   // 1. Pull cloud
   // Lu en entier, par pages : une réponse tronquée ferait prendre des favoris pour des retraits
-  const cloudBookmarks = await fetchAllRows<CloudLiveTvBookmark>('user_livetv_bookmarks', userId, ['bookmark_type', 'item_id'], 'liveTv');
+  const cloudBookmarks = await fetchAllRows<CloudLiveTvBookmark>(
+    scope.table, userId, scope.on ? ['provider_hash', 'bookmark_type', 'item_id'] : ['bookmark_type', 'item_id'], 'liveTv',
+  );
 
   const cloudSet = new Set<string>();
   for (const row of (cloudBookmarks || []) as CloudLiveTvBookmark[]) {
-    cloudSet.add(`${row.bookmark_type}::${row.item_id}`);
+    const key = cloudKey(scope, row.provider_hash, `${row.bookmark_type}::${row.item_id}`);
+    if (key !== null) cloudSet.add(key);
   }
 
   // 2. Pull local
@@ -48,19 +60,21 @@ async function syncLiveTvNow(userId: string, result: SyncResult): Promise<void> 
 
   const localSet = new Set<string>();
   for (const row of localFavs) {
-    localSet.add(`favorite::${row.stream_id}`);
+    localSet.add(localKey(scope, `favorite::${row.stream_id}`));
   }
   // Catégorie au numéro démesuré : gardée ici, jamais envoyée (la base la refuserait)
   for (const row of localPins) {
-    if (fitsCloudProviderId(row.category_id)) localSet.add(`pinned_category::${row.category_id}`);
+    if (fitsCloudProviderId(row.category_id)) localSet.add(localKey(scope, `pinned_category::${row.category_id}`));
   }
 
   // 3. Fusion à trois ; plus rien n'est écrit si le compte a changé pendant la lecture du cloud
   const plan = planMerge(localSet, cloudSet, baseline);
   if (!canStillWrite(userId, baseline)) return;
   const split = (key: string) => {
-    const at = key.indexOf('::');
-    return { type: key.slice(0, at) as 'favorite' | 'pinned_category', id: key.slice(at + 2) };
+    // Clés de cette portée seulement (fusion faite sur le fournisseur de l'appareil)
+    const item = itemKeyOf(scope, key)!;
+    const at = item.indexOf('::');
+    return { type: item.slice(0, at) as 'favorite' | 'pinned_category', id: item.slice(at + 2) };
   };
 
   // 4. Ajoutés ailleurs → insérer en local
@@ -98,12 +112,14 @@ async function syncLiveTvNow(userId: string, result: SyncResult): Promise<void> 
   const removedFromCloud: string[] = [];
   for (const key of plan.removeCloud) {
     const { type, id } = split(key);
-    const { error: delErr } = await supabase
-      .from('user_livetv_bookmarks')
+    let request = supabase
+      .from(scope.table)
       .delete()
       .eq('user_id', userId)
       .eq('bookmark_type', type)
       .eq('item_id', id);
+    if (scope.on) request = request.in('provider_hash', ownedRowHashes(scope));
+    const { error: delErr } = await request;
     if (delErr) log.warn('LiveTV cloud delete failed:', delErr.message);
     else {
       removedFromCloud.push(key);
@@ -113,22 +129,23 @@ async function syncLiveTvNow(userId: string, result: SyncResult): Promise<void> 
 
   // 7. Ajoutés ici → push cloud
   if (plan.pushToCloud.length > 0) {
-    const providerHash = getLastProviderHash(); // empreinte du fournisseur : sync/syncPurge.ts
+    // Empreinte du fournisseur : celle de l'appareil (tables par fournisseur), sinon sync/syncPurge.ts
+    const providerHash = scope.on ? scope.deviceHash : getLastProviderHash();
     const rows = plan.pushToCloud.map((key) => {
       const { type, id } = split(key);
       return { user_id: userId, bookmark_type: type, item_id: id, provider_hash: providerHash };
     });
 
     const { error: upsertErr } = await supabase
-      .from('user_livetv_bookmarks')
-      .upsert(rows, { onConflict: 'user_id,bookmark_type,item_id' });
+      .from(scope.table)
+      .upsert(rows, { onConflict: scope.on ? 'user_id,provider_hash,bookmark_type,item_id' : 'user_id,bookmark_type,item_id' });
 
     if (upsertErr) throw cloudWriteError('Supabase upsert liveTv', upsertErr);
     result.liveTv.pushed += plan.pushToCloud.length;
   }
 
   // 8. Dernier accord : ce qui est désormais des deux côtés, et ce qui n'est plus nulle part
-  await updateBaseline(userId, 'livetv', {
+  await updateBaseline(userId, scope.baselineScope, {
     generation: baseline.generation,
     set: [...plan.inBoth, ...plan.pullToLocal, ...plan.pushToCloud].map((key) => [key, 0] as [string, number]),
     remove: [...plan.removeLocal, ...removedFromCloud, ...plan.stale],

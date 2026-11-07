@@ -1,14 +1,15 @@
 /**
  * Accueil Films / Séries d'un fournisseur qui ne donne aucun numéro TMDB (des dizaines de milliers de films
  * et de séries chargés, onglets vides). Ses catégories gardent tous leurs titres, affiches d'abord. Un catalogue
- * avec des numéros TMDB garde l'accueil d'avant (titres avec fiche et affiche seulement).
+ * avec des numéros TMDB met ses titres avec fiche et affiche en tête de rangée, sans écarter les autres, et ses
+ * catégories sans aucune fiche en bas de la page.
  */
 
 import { describe, it, expect, vi } from 'vitest';
 import { render } from '@testing-library/react';
 import type { RailSource } from '../rail/rail';
-import type { LightIndexes } from '../../../types/lightIndex';
-import { OTHER_CATEGORY_ID, groupItemsByCategory } from '../categoryRows';
+import { categoryKey, type LightIndexes } from '../../../types/lightIndex';
+import { OTHER_CATEGORY_ID, groupItemsByCategory, orderRows } from '../categoryRows';
 
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }), initReactI18next: { type: '3rdParty', init: () => {} } }));
 vi.mock('../IptvMode.css', () => ({}));
@@ -39,9 +40,9 @@ function indexesOf(movies: ReturnType<typeof film>[], series: ReturnType<typeof 
     series: new Map(series.map((s) => [s.id, s])),
     live: new Map(),
     categories: new Map([
-      ['10', { id: '10', name: 'Films FR', type: 'movie' }],
-      ['11', { id: '11', name: 'XXX', type: 'movie' }],
-      ['20', { id: '20', name: 'Séries FR', type: 'series' }],
+      [categoryKey('movie', '10'), { id: '10', name: 'Films FR', type: 'movie' }],
+      [categoryKey('movie', '11'), { id: '11', name: 'XXX', type: 'movie' }],
+      [categoryKey('series', '20'), { id: '20', name: 'Séries FR', type: 'series' }],
     ]),
     moviesByTmdb: linked(movies),
     seriesByTmdb: linked(series),
@@ -84,11 +85,18 @@ describe('Accueil Films / Séries sans numéro TMDB', () => {
     expect(other.items.map((item) => item.title)).toEqual(['Film 2', 'Film 3']);
   });
 
-  it('catalogue avec des numéros TMDB : accueil inchangé (catégorie sans fiche TMDB cachée)', () => {
-    const movies = [film(1, '10', { tmdbId: 101 }), film(2, '10'), film(3, '10', { tmdbId: 103, icon: false }), film(4, '11')];
+  it('catalogue avec des numéros TMDB : fiches TMDB en tête de rangée, puis les autres titres ; catégorie sans fiche en bas', () => {
+    const movies = [film(4, '11'), film(1, '10', { tmdbId: 101 }), film(2, '10'), film(3, '10', { tmdbId: 103, icon: false })];
     render(<LightIptvMode type="movies" lightIndexes={indexesOf(movies)} onItemClick={noop} onSeeAll={noop} />);
-    expect(railProps.rows).toEqual(['10']);
-    expect(railProps.source!('10')!.items.map((item) => item.title)).toEqual(['Film 1']);
+    expect(railProps.rows).toEqual(['10', '11']);
+    expect(railProps.source!('10')!.items.map((item) => item.title)).toEqual(['Film 1', 'Film 2', 'Film 3']);
+    expect(railProps.source!('11')!.items.map((item) => item.title)).toEqual(['Film 4']);
+  });
+
+  it('catégorie sans fiche TMDB placée avant une autre par le fournisseur : passe quand même en bas, avant « Autres »', () => {
+    const movies = [film(1, '10'), film(2, '11', { tmdbId: 102 }), film(3, '99', { tmdbId: 103 })];
+    render(<LightIptvMode type="movies" lightIndexes={indexesOf(movies)} onItemClick={noop} onSeeAll={noop} />);
+    expect(railProps.rows).toEqual(['11', '10', OTHER_CATEGORY_ID]);
   });
 });
 
@@ -115,10 +123,17 @@ describe('groupItemsByCategory', () => {
     expect(grouped.has('c')).toBe(false);
   });
 
-  it('catalogue avec TMDB : seulement fiche TMDB et affiche, comme avant', () => {
+  it('catalogue avec TMDB : aucun titre écarté, fiche TMDB et affiche d\'abord, puis affiche, puis le reste', () => {
     const grouped = groupItemsByCategory(items, true, new Set(['a', 'b', 'c']));
-    expect(grouped.get('a')!.map((item) => item.id)).toEqual([3, 5]);
-    expect(grouped.has('b')).toBe(false);
-    expect(grouped.has('c')).toBe(false);
+    expect(grouped.get('a')!.map((item) => item.id)).toEqual([3, 5, 1, 2]);
+    expect(grouped.get('b')!.map((item) => item.id)).toEqual([4]);
+    expect(grouped.get('c')!.map((item) => item.id)).toEqual([6]);
+  });
+
+  it('orderRows : catalogue sans TMDB, ordre du fournisseur gardé même si des titres ont une fiche', () => {
+    const grouped = new Map([['a', [film(1, 'a')]], ['b', [film(2, 'b', { tmdbId: 20 })]]]);
+    const categories = [{ id: 'a' }, { id: 'b' }, { id: 'vide' }];
+    expect(orderRows(categories, grouped, false).map((c) => c.id)).toEqual(['a', 'b']);
+    expect(orderRows(categories, grouped, true).map((c) => c.id)).toEqual(['b', 'a']);
   });
 });

@@ -588,6 +588,11 @@ pub fn open_connection(db_path: &Path) -> Result<Connection, String> {
 
     // Auto-repair: ensure columns added in post-v1 migrations exist.
     crate::schema::run_auto_repair(&conn, crate::schema::CATALOG_AUTO_REPAIR);
+    // Clé (type, numéro) des catégories : déjà posée à l'ouverture par la page ; ici pour une
+    // base ouverte d'abord par le Rust. Un échec laisse l'ancienne clé, comme avant.
+    if let Err(e) = crate::schema::upgrade_categories_key(&conn) {
+        eprintln!("[catalog_parser] categories key upgrade postponed: {}", e);
+    }
 
     Ok(conn)
 }
@@ -727,7 +732,7 @@ pub fn insert_series(tx: &Transaction, series: &[XtreamSeries]) -> Result<usize,
 /// Extrait un code pays ISO 2 lettres depuis les tags du nom brut M3U.
 /// Cherche dans l'ordre : |FR|, [FR], FR| (préfixe cassé).
 /// Retourne None si aucun tag géographique n'est trouvé.
-fn extract_geo_hint(name: &str) -> Option<String> {
+pub(crate) fn extract_geo_hint(name: &str) -> Option<String> {
     static RE_PIPE: OnceLock<Regex> = OnceLock::new();
     static RE_BRACKET: OnceLock<Regex> = OnceLock::new();
     static RE_PREFIX: OnceLock<Regex> = OnceLock::new();
@@ -754,7 +759,7 @@ fn extract_geo_hint(name: &str) -> Option<String> {
 /// Utilise des patterns structurels (et non une liste hardcodée) pour retirer
 /// tous les tags |XX|, [XX], (XX), et les préfixes cassés type "FR|".
 /// Conserve la Qualité (UHD) et TimeShift (-2H) qui ne sont pas entre tags.
-fn clean_display_name_for_ui(name: &str) -> String {
+pub(crate) fn clean_display_name_for_ui(name: &str) -> String {
     static RE_PIPE_TAGS: OnceLock<Regex> = OnceLock::new();
     static RE_BRACKET_TAGS: OnceLock<Regex> = OnceLock::new();
     static RE_PAREN_TAGS: OnceLock<Regex> = OnceLock::new();
@@ -914,6 +919,31 @@ mod tests {
         let list = parse_list_lenient::<XtreamLive>(live).unwrap();
         assert_eq!((list.items.len(), list.skipped), (1, 0));
         assert_eq!(live_row(&list.items[0]).name, "TF1");
+    }
+
+    /// Fournisseur farfelu du banc (src-tauri/tests/fixtures/farfelu.json) : chaque élément est un
+    /// piège vu chez de vrais fournisseurs ; aucun ne doit être jeté à la lecture, et chaque titre garde
+    /// un nom (cherchable).
+    #[test]
+    fn every_trap_of_the_odd_provider_is_kept() {
+        use serde_json::value::RawValue;
+        let lists: std::collections::HashMap<String, Box<RawValue>> =
+            serde_json::from_str(include_str!("../tests/fixtures/farfelu.json")).unwrap();
+        let raw = |key: &str| lists.get(key).unwrap_or_else(|| panic!("{} absent", key)).get().as_bytes();
+        let len = |key: &str| serde_json::from_slice::<Vec<serde_json::Value>>(raw(key)).unwrap().len();
+        for key in ["get_live_categories", "get_vod_categories", "get_series_categories"] {
+            let list = parse_list_lenient::<XtreamCategory>(raw(key)).unwrap();
+            assert_eq!((list.items.len(), list.skipped), (len(key), 0), "{}", key);
+        }
+        let live = parse_list_lenient::<XtreamLive>(raw("get_live_streams")).unwrap();
+        assert_eq!((live.items.len(), live.skipped), (len("get_live_streams"), 0));
+        assert!(live.items.iter().all(|l| !live_row(l).name.is_empty()), "chaîne sans nom");
+        let movies = parse_list_lenient::<XtreamMovie>(raw("get_vod_streams")).unwrap();
+        assert_eq!((movies.items.len(), movies.skipped), (len("get_vod_streams"), 0));
+        assert!(movies.items.iter().all(|m| !movie_row(m).name.is_empty()));
+        let series = parse_list_lenient::<XtreamSeries>(raw("get_series")).unwrap();
+        assert_eq!((series.items.len(), series.skipped), (len("get_series"), 0));
+        assert!(series.items.iter().all(|s| !series_row(s).name.is_empty()));
     }
 
     /// Numéro envoyé en nombre à virgule mais entier (`1.0`, `1e3`) : lu comme l'entier ; un vrai

@@ -11,7 +11,9 @@
  * - et fige le hasard (photo de fond des fiches) pour que chaque passage affiche la même chose.
  */
 
-export const PERF_ENABLED = import.meta.env.VITE_PERF === '1';
+import { VERSION_MESURE } from '../services/outilsTest';
+
+export const PERF_ENABLED = VERSION_MESURE;
 
 export interface PerfCounters {
   longTasks: { start: number; duration: number }[];

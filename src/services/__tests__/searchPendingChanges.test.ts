@@ -31,7 +31,10 @@ async function defaultExecute(sql: string, params: unknown[] = []) {
 }
 vi.mock('../dbCore', () => ({ getDatabase: vi.fn(async () => fakeDb) }));
 
-import { applyPendingSearchChanges, rebuildSearchIndex, searchContent } from '../searchIndex';
+import { applyPendingSearchChanges, rebuildSearchIndex, searchContent, SEARCH_NORM_VERSION } from '../searchIndex';
+
+/** Index déjà fait avec la règle de normalisation actuelle (sinon il est refait en entier) */
+const norm = { search_norm: SEARCH_NORM_VERSION };
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -45,12 +48,13 @@ beforeEach(() => {
 
 describe('applyPendingSearchChanges', () => {
   it('sans note : rien à faire', async () => {
+    notes = { ...norm };
     expect(await applyPendingSearchChanges()).toBe('none');
     expect(executed).toHaveLength(0);
   });
 
   it('ligne à ligne : supprime les lignes notées et réinsère les noms actuels (titre retiré non réinséré)', async () => {
-    notes = { search_dirty: '1', search_seq: '4', search_pending: JSON.stringify({ movie: [1, 2], live: [7] }) };
+    notes = { ...norm, search_dirty: '1', search_seq: '4', search_pending: JSON.stringify({ movie: [1, 2], live: [7] }) };
     names.movies = [{ id: 1, name: 'Été indien' }];
     names.live = [{ id: 7, name: 'TF1 HD' }];
 
@@ -70,7 +74,7 @@ describe('applyPendingSearchChanges', () => {
   });
 
   it('« all » : reconstruction complète sans jamais vider la recherche', async () => {
-    notes = { search_dirty: '1', search_seq: '9', search_pending: 'all' };
+    notes = { ...norm, search_dirty: '1', search_seq: '9', search_pending: 'all' };
     names.series = [{ id: 3, name: 'Série' }];
     expect(await applyPendingSearchChanges()).toBe('rebuilt');
     // Nouvelles lignes d'abord, puis retrait des anciennes (numéros ≤ 50) d'un seul coup
@@ -84,20 +88,18 @@ describe('applyPendingSearchChanges', () => {
     expect(executed[2].params).toEqual(['9']);
   });
 
-  it('« all » arrêtée par une vidéo : les lignes ajoutées sont retirées, la note reste', async () => {
-    notes = { search_dirty: '1', search_seq: '9', search_pending: 'all' };
+  it('« all » arrêtée par une vidéo : rien n\'est effacé pendant la lecture, la note reste', async () => {
+    notes = { ...norm, search_dirty: '1', search_seq: '9', search_pending: 'all' };
     names.movies = [{ id: 1, name: 'Film' }];
     let calls = 0;
     expect(await applyPendingSearchChanges(() => ++calls > 2)).toBe('stopped');
-    expect(executed.map((e) => e.sql)).toEqual([
-      expect.stringContaining('INSERT INTO search_index'),
-      'DELETE FROM search_index WHERE rowid > ?',
-    ]);
-    expect(executed[1].params).toEqual([50]);
+    // Les lignes ajoutées restent (doublons, un seul résultat par titre) : la reconstruction suivante
+    // les compte parmi les anciennes et les retire avec elles
+    expect(executed.map((e) => e.sql)).toEqual([expect.stringContaining('INSERT INTO search_index')]);
   });
 
   it('ligne à ligne arrêtée : la note reste pour le passage suivant', async () => {
-    notes = { search_dirty: '1', search_seq: '4', search_pending: JSON.stringify({ movie: [1] }) };
+    notes = { ...norm, search_dirty: '1', search_seq: '4', search_pending: JSON.stringify({ movie: [1] }) };
     expect(await applyPendingSearchChanges(() => true)).toBe('stopped');
     expect(executed).toHaveLength(0);
   });
@@ -144,6 +146,8 @@ describe('applyPendingSearchChanges', () => {
     // La note est posée avant de vider l'index, et effacée en dernier
     expect(executed[1].sql).toBe('DELETE FROM search_index');
     expect(executed[executed.length - 1].sql).toContain("DELETE FROM meta WHERE key IN ('search_dirty', 'search_pending')");
+    // Juste avant : la marque de la règle de normalisation (posée avant d'effacer la note)
+    expect(executed[executed.length - 2].params).toEqual([SEARCH_NORM_VERSION]);
   });
 
   it('un titre présent deux fois dans l\'index n\'apparaît qu\'une fois', async () => {

@@ -98,8 +98,10 @@
     transition: transform var(--duration-fast) var(--ease-out);
 }
 
-.profile-card:hover {
-    transform: scale(1.06);
+@media (hover: hover) {
+  .profile-card:hover {
+      transform: scale(1.06);
+  }
 }
 
 .profile-card:active {
@@ -111,8 +113,10 @@
     cursor: not-allowed;
 }
 
-.profile-card--new:hover {
-    transform: none;
+@media (hover: hover) {
+  .profile-card--new:hover {
+      transform: none;
+  }
 }
 
 /* Avatar circle */
@@ -129,13 +133,15 @@
                 box-shadow var(--duration-fast) var(--ease-out);
 }
 
-.profile-card:hover .profile-card__avatar {
-    border-color: rgba(255, 255, 255, 0.5);
-    box-shadow: 0 0 2rem rgba(255, 255, 255, 0.1);
+@media (hover: hover) {
+  .profile-card:hover .profile-card__avatar {
+      border-color: rgba(255, 255, 255, 0.5);
+      box-shadow: 0 0 2rem rgba(255, 255, 255, 0.1);
+  }
 }
 
 .profile-card__avatar--new {
-    background: rgba(255, 255, 255, 0.05) !important;
+    background: rgba(255, 255, 255, 0.05);
     border: 0.125rem dashed rgba(255, 255, 255, 0.15);
 }
 
@@ -166,8 +172,10 @@
     transition: color var(--duration-fast) var(--ease-out);
 }
 
-.profile-card:hover .profile-card__name {
-    color: var(--text-primary);
+@media (hover: hover) {
+  .profile-card:hover .profile-card__name {
+      color: var(--text-primary);
+  }
 }
 
 /* Badge "Bientôt" on new profile card */
@@ -207,9 +215,11 @@
     color: var(--color-error);
 }
 
-.profile-selector__btn--signout:hover {
-    background: var(--color-error-bg);
-    border-color: rgba(239, 68, 68, 0.5);
+@media (hover: hover) {
+  .profile-selector__btn--signout:hover {
+      background: var(--color-error-bg);
+      border-color: rgba(239, 68, 68, 0.5);
+  }
 }
 
 /* ============================================================================
@@ -230,9 +240,11 @@
                 color var(--duration-fast) var(--ease-out);
 }
 
-.profile-retry-btn:hover {
-    border-color: rgba(255, 255, 255, 0.35);
-    color: var(--text-primary);
+@media (hover: hover) {
+  .profile-retry-btn:hover {
+      border-color: rgba(255, 255, 255, 0.35);
+      color: var(--text-primary);
+  }
 }
 
 /* Réessayer + Se déconnecter : côte à côte, l'un sous l'autre si l'écran est trop étroit */

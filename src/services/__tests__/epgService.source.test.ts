@@ -13,7 +13,12 @@ const source = vi.hoisted(() => ({ creds: null as null | { host: string; usernam
 vi.mock('../storage', () => ({ StorageService: { getCredentials: vi.fn(async () => source.creds) } }));
 
 import { epgSourceUrl } from '../epgService';
+import { brancherOutilsTest } from '../outilsTest';
 import { adresseGuideBanc } from '../../dev/bancAdresses';
+
+// Guide factice branché comme le fait src/dev/prisesBanc.ts dans une version du banc ; la condition
+// VITE_BANC=1 d'epgSourceUrl décide seule s'il sert.
+brancherOutilsTest({ guideBanc: adresseGuideBanc });
 
 const PUBLIQUE = 'https://epgshare01.online/epgshare01/epg_ripper_ALL_SOURCES1.xml.gz';
 const FAUX = { host: 'http://127.0.0.1:8765', username: 'banc', password: 'banc' };

@@ -13,6 +13,8 @@ import { fetchAllRows } from './syncFetch';
 import { cloudPosterUrl } from './cloudPoster';
 import { cloudContainerExtension, cloudNextEpisodeId, cloudTitle } from './cloudLimits';
 import { cloudWriteError } from './cloudRefusal';
+import { providerSyncScope, localKey, cloudKey, baselineForScope, ownedRowHashes } from './providerSync';
+import type { ProviderSyncScope } from './providerSync';
 import { createLogger } from '../../utils/logger';
 import { safeContainerExtension } from '../../utils/xtreamCredentials';
 
@@ -96,22 +98,40 @@ function incomingIdentity(
   };
 }
 
+/**
+ * Sync des reprises. Tables par fournisseur (sync/providerSync.ts) : seulement les reprises du
+ * fournisseur de l'appareil ; une reprise d'un autre fournisseur au même numéro n'est ni reprise ici
+ * ni retirée du cloud (pas de reprise d'une source à l'autre).
+ */
 export function syncPlayback(userId: string, result: SyncResult): Promise<void> {
-  return runExclusive('playback', () => syncPlaybackNow(userId, result));
+  const scope = providerSyncScope('playback');
+  if (!scope) {
+    log.warn('playback: provider of this device unknown, not synced');
+    return Promise.resolve();
+  }
+  return runExclusive(scope.baselineScope, () => syncPlaybackNow(userId, result, scope));
 }
 
-async function syncPlaybackNow(userId: string, result: SyncResult): Promise<void> {
+async function syncPlaybackNow(userId: string, result: SyncResult, scope: ProviderSyncScope): Promise<void> {
   // Dernier accord lu en premier (avant le cloud et le local), voir syncBaseline.readBaseline
-  const baseline = await readBaseline(userId, 'playback');
+  const baselineRead = await readBaseline(userId, scope.baselineScope);
+  const baseline = Object.assign(baselineForScope(scope, baselineRead), { generation: baselineRead.generation, scope: baselineRead.scope });
+  const key = (streamId: number) => localKey(scope, String(streamId));
   const db = await getDatabase();
 
   // 1. Pull cloud
   // Lu en entier, par pages : une réponse tronquée ferait prendre des reprises pour des retraits
-  const cloudRows = await fetchAllRows<CloudPlaybackRow>('user_playback_progress', userId, ['stream_id'], 'playback');
+  const cloudRows = await fetchAllRows<CloudPlaybackRow>(
+    scope.table, userId, scope.on ? ['provider_hash', 'stream_id'] : ['stream_id'], 'playback',
+  );
 
   const cloudMap = new Map<number, CloudPlaybackRow>();
   for (const row of (cloudRows || [])) {
-    cloudMap.set(row.stream_id, row);
+    // Ligne d'un autre fournisseur ou illisible : laissée telle quelle
+    if (cloudKey(scope, row.provider_hash, String(row.stream_id)) === null) continue;
+    // Même reprise avec et sans empreinte (ancienne version) : la plus récente compte
+    const seen = cloudMap.get(row.stream_id);
+    if (!seen || isoToMs(row.updated_at) > isoToMs(seen.updated_at)) cloudMap.set(row.stream_id, row);
   }
 
   // 2. Pull local
@@ -141,7 +161,7 @@ async function syncPlaybackNow(userId: string, result: SyncResult): Promise<void
   for (const [streamId, cloudRow] of cloudMap) {
     const local = localMap.get(streamId);
     const cloudMs = isoToMs(cloudRow.updated_at);
-    const known = baseline.get(String(streamId));
+    const known = baseline.get(key(streamId));
 
     if (!local) {
       if (known !== undefined && cloudMs <= known) {
@@ -158,14 +178,14 @@ async function syncPlaybackNow(userId: string, result: SyncResult): Promise<void
       // Local plus récent → push cloud
       toPushCloud.push(local);
     } else {
-      agreed.set(String(streamId), cloudMs);
+      agreed.set(key(streamId), cloudMs);
     }
   }
 
   // Local-only → push cloud, sauf si retirée ailleurs depuis le dernier accord
   for (const [streamId, local] of localMap) {
     if (cloudMap.has(streamId)) continue;
-    const known = baseline.get(String(streamId));
+    const known = baseline.get(key(streamId));
     if (known !== undefined && local.updated_at <= known) toRemoveLocal.push(local);
     else toPushCloud.push(local);
   }
@@ -245,21 +265,25 @@ async function syncPlaybackNow(userId: string, result: SyncResult): Promise<void
   // 5. Retirées ici sans que le cloud le sache → retirer du cloud
   const removedFromCloud: string[] = [];
   for (const cloudRow of toRemoveCloud) {
-    const { error: delErr } = await supabase
-      .from('user_playback_progress')
+    let request = supabase
+      .from(scope.table)
       .delete()
       .eq('user_id', userId)
       .eq('stream_id', cloudRow.stream_id);
+    // Ses lignes seulement, copie sans empreinte comprise (sync/providerSync.ts)
+    if (scope.on) request = request.in('provider_hash', ownedRowHashes(scope));
+    const { error: delErr } = await request;
     if (delErr) log.warn('Playback cloud delete failed:', delErr.message);
     else {
-      removedFromCloud.push(String(cloudRow.stream_id));
+      removedFromCloud.push(key(cloudRow.stream_id));
       result.playback.pushed++;
     }
   }
 
-  // 5b. Push to cloud (avec l'empreinte du fournisseur : sync/syncPurge.ts)
+  // 5b. Push to cloud. Empreinte du fournisseur : celle de l'appareil (tables par fournisseur),
+  //     sinon sync/syncPurge.ts
   if (toPushCloud.length > 0) {
-    const providerHash = getLastProviderHash();
+    const providerHash = scope.on ? scope.deviceHash : getLastProviderHash();
     const rows = toPushCloud.map((local) => ({
       user_id: userId,
       stream_id: local.stream_id,
@@ -281,24 +305,24 @@ async function syncPlaybackNow(userId: string, result: SyncResult): Promise<void
     }));
 
     const { error: upsertErr } = await supabase
-      .from('user_playback_progress')
-      .upsert(rows, { onConflict: 'user_id,stream_id' });
+      .from(scope.table)
+      .upsert(rows, { onConflict: scope.on ? 'user_id,provider_hash,stream_id' : 'user_id,stream_id' });
 
     if (upsertErr) throw cloudWriteError('Supabase upsert playback', upsertErr);
     result.playback.pushed += toPushCloud.length;
   }
 
   // 6. Dernier accord : version de chaque reprise désormais identique des deux côtés
-  const present = new Set([...cloudMap.keys(), ...localMap.keys()].map(String));
-  await updateBaseline(userId, 'playback', {
+  const present = new Set([...cloudMap.keys(), ...localMap.keys()].map(key));
+  await updateBaseline(userId, scope.baselineScope, {
     generation: baseline.generation,
     set: [
       ...agreed,
-      ...toInsertLocal.map((row) => [String(row.stream_id), isoToMs(row.updated_at)] as [string, number]),
-      ...toPushCloud.map((row) => [String(row.stream_id), row.updated_at] as [string, number]),
+      ...toInsertLocal.map((row) => [key(row.stream_id), isoToMs(row.updated_at)] as [string, number]),
+      ...toPushCloud.map((row) => [key(row.stream_id), row.updated_at] as [string, number]),
     ],
     remove: [
-      ...toRemoveLocal.map((row) => String(row.stream_id)),
+      ...toRemoveLocal.map((row) => key(row.stream_id)),
       ...removedFromCloud,
       ...[...baseline.keys()].filter((key) => !present.has(key)),
     ],

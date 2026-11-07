@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { sanitizeIptvUrl } from '../sanitizeUrl';
+import { sanitizeIptvUrl, describeStreamForLog } from '../sanitizeUrl';
 
 describe('sanitizeIptvUrl', () => {
   // ── Stream URLs (path-based credentials) ──
@@ -173,5 +173,23 @@ describe('sanitizeIptvUrl', () => {
   it('garde lisible une adresse TMDB', () => {
     const tmdb = 'https://api.themoviedb.org/3/tv/1399/season/1?language=fr-FR';
     expect(sanitizeIptvUrl(tmdb)).toBe(tmdb);
+  });
+});
+
+describe('describeStreamForLog', () => {
+  it('adresse Xtream : hôte, type et numéro du flux, sans identifiants', () => {
+    expect(describeStreamForLog('http://h.example:8080/live/USER/PASS/123.ts')).toBe('http://h.example:8080/live/…/123.ts');
+  });
+
+  it('adresse de liste M3U : ni chemin ni paramètres, où un secret peut se cacher', () => {
+    const text = describeStreamForLog('https://cdn.example/abc123secret/index.m3u8?sig=XYZ&exp=1');
+    expect(text).toBe('https://cdn.example/…/.m3u8');
+    expect(text).not.toContain('abc123secret');
+    expect(text).not.toContain('XYZ');
+  });
+
+  it('identifiants dans l\'adresse et adresse illisible : rien ne sort', () => {
+    expect(describeStreamForLog('http://u:p@h.example/flux')).toBe('http://h.example/…/');
+    expect(describeStreamForLog('pas une adresse')).toBe('(adresse illisible)');
   });
 });

@@ -16,6 +16,9 @@ CLAUDE.md
 graphify-out/**
 tv-harness.html
 
+# --- Mises à jour de dépendances : traitées dans l'atelier privé, jamais proposées sur le public ---
+.github/dependabot.yml
+
 # --- Documentation de travail (seuls les documents d'explication sont publiés) ---
 docs/**
 !docs/CONVENTIONS.md
@@ -89,3 +92,4 @@ resources/mpv/mpv.exe
 src-tauri/plugins/tauri-plugin-nyx-android/android/libs/**
 !src-tauri/plugins/tauri-plugin-nyx-android/android/libs/README.md
 !src-tauri/plugins/tauri-plugin-nyx-android/android/libs/maven/com/nyxplayer/libmpv-lgpl/*/*.pom
+scripts/sonde-titres-tmdb.mjs

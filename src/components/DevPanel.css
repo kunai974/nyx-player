@@ -23,10 +23,12 @@
   transition: background 0.2s, color 0.2s, box-shadow 0.2s;
 }
 
-.dev-panel-toggle:hover {
-  background: rgba(40, 40, 163, 0.5);
-  color: #fff;
-  box-shadow: 0 0 12px rgba(40, 40, 163, 0.4);
+@media (hover: hover) {
+  .dev-panel-toggle:hover {
+    background: rgba(40, 40, 163, 0.5);
+    color: #fff;
+    box-shadow: 0 0 12px rgba(40, 40, 163, 0.4);
+  }
 }
 
 .dev-panel-toggle--active {
@@ -112,8 +114,10 @@
   transition: background 0.2s;
 }
 
-.dev-panel__reset:hover {
-  background: rgba(239, 68, 68, 0.15);
+@media (hover: hover) {
+  .dev-panel__reset:hover {
+    background: rgba(239, 68, 68, 0.15);
+  }
 }
 
 .dev-panel__reset--full {
@@ -241,9 +245,11 @@
   transition: all 0.15s;
 }
 
-.dev-panel__radio:hover {
-  border-color: rgba(255, 255, 255, 0.25);
-  color: #e0e0e0;
+@media (hover: hover) {
+  .dev-panel__radio:hover {
+    border-color: rgba(255, 255, 255, 0.25);
+    color: #e0e0e0;
+  }
 }
 
 .dev-panel__radio--active {
@@ -295,12 +301,14 @@
 }
 
 /* Danger radio btn (reset zoom) */
-.dev-panel__radio--danger {
-  background: rgba(239, 68, 68, 0.2) !important;
-  border-color: rgba(239, 68, 68, 0.5) !important;
-  color: #ef4444 !important;
+.dev-panel__radio.dev-panel__radio--danger {
+  background: rgba(239, 68, 68, 0.2);
+  border-color: rgba(239, 68, 68, 0.5);
+  color: #ef4444;
 }
 
-.dev-panel__radio--danger:hover {
-  background: rgba(239, 68, 68, 0.35) !important;
+@media (hover: hover) {
+  .dev-panel__radio.dev-panel__radio--danger:hover {
+    background: rgba(239, 68, 68, 0.35);
+  }
 }

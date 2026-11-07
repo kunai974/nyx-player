@@ -18,6 +18,7 @@
   bottom: var(--player-controls-height); /* Token global défini en rem — App.css */
   width: 35%;
   min-width: 300px;
+  /* stylelint-disable-next-line defensive-css/no-fixed-sizes -- plafond de confort : le panneau reste un pourcentage de l'écran entre deux bornes (300 et 450 px) */
   max-width: 450px;
   background-color: rgba(10, 10, 10, 0.85); /* Plus opaque comme demandé */
   backdrop-filter: blur(64px); /* Encore plus flou */
@@ -72,7 +73,9 @@
 }
 
 .episode-spinner {
+  /* stylelint-disable-next-line defensive-css/no-fixed-sizes -- indicateur de chargement rond : taille fixe, sans lien avec la taille du texte */
   width: 36px;
+  /* stylelint-disable-next-line defensive-css/no-fixed-sizes -- indicateur de chargement rond : taille fixe, sans lien avec la taille du texte */
   height: 36px;
   border: 3px solid rgba(255, 255, 255, 0.1);
   border-top-color: var(--primary-color, #e50914);
@@ -111,9 +114,11 @@
   align-items: center;
 }
 
-.episode-list-item:hover {
-  background-color: rgba(255, 255, 255, 0.08);
-  transform: translateX(4px);
+@media (hover: hover) {
+  .episode-list-item:hover {
+    background-color: rgba(255, 255, 255, 0.08);
+    transform: translateX(4px);
+  }
 }
 
 .episode-list-item.is-active {
@@ -123,7 +128,9 @@
 
 .epi-thumbnail-container {
   position: relative;
+  /* stylelint-disable-next-line defensive-css/no-fixed-sizes -- vignette 16:9 de l'épisode : taille fixe, la rangée ne doit pas grandir avec le texte */
   width: 150px;
+  /* stylelint-disable-next-line defensive-css/no-fixed-sizes -- vignette 16:9 de l'épisode : taille fixe, la rangée ne doit pas grandir avec le texte */
   height: 84px; /* 16:9 approx */
   flex-shrink: 0;
   border-radius: 0.35rem;
@@ -139,8 +146,10 @@
   transition: transform 0.3s cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
-.episode-list-item:hover .epi-thumbnail {
-  transform: scale(1.05);
+@media (hover: hover) {
+  .episode-list-item:hover .epi-thumbnail {
+    transform: scale(1.05);
+  }
 }
 
 /* Indicateur "En ligne / Playing" */
@@ -156,14 +165,18 @@
 }
 
 .epi-playing-bars {
+  /* stylelint-disable-next-line defensive-css/no-fixed-sizes -- équaliseur animé décoratif (lecture en cours) : taille fixe */
   width: 4px;
+  /* stylelint-disable-next-line defensive-css/no-fixed-sizes -- équaliseur animé décoratif (lecture en cours) : taille fixe */
   height: 16px;
   background-color: var(--primary-color, #e50914);
   border-radius: 2px;
   animation: epi-eq 1s ease-in-out infinite alternate;
 }
 
+/* stylelint-disable-next-line defensive-css/no-fixed-sizes -- équaliseur animé décoratif : hauteur de la 2e barre */
 .epi-playing-bars:nth-child(2) { animation-delay: 0.2s; height: 12px; }
+/* stylelint-disable-next-line defensive-css/no-fixed-sizes -- équaliseur animé décoratif : hauteur de la 3e barre */
 .epi-playing-bars:nth-child(3) { animation-delay: 0.4s; height: 20px; }
 
 @keyframes epi-eq {
@@ -240,7 +253,7 @@
     rgba(255, 255, 255, 0.03) 70%
   ); /* standard skeleton-block bg */
   background-size: 200% 100%;
-  color: transparent !important;
+  color: transparent;
   border-radius: var(--radius-sm);
   overflow: hidden;
   position: relative;

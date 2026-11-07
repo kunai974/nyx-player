@@ -122,6 +122,20 @@ export default tseslint.config(
     },
   },
   {
+    // Sens unique : les outils de test (src/dev) se branchent sur l'appli par ses prises
+    // (src/services/outilsTest.ts) ; l'appli ne les importe jamais. Seule porte : main.tsx.
+    files: ['src/**/*.{ts,tsx}'],
+    ignores: ['src/dev/**', 'src/main.tsx', ...TEST_FILES],
+    rules: {
+      'no-restricted-imports': ['error', {
+        patterns: [{
+          group: ['**/dev', '**/dev/*', '**/dev/**'],
+          message: "Le code de l'appli n'importe pas src/dev : passer par une prise de src/services/outilsTest.ts, branchée dans src/dev/prises.ts.",
+        }],
+      }],
+    },
+  },
+  {
     // Le journal central et les traces de développement écrivent eux-mêmes dans la console.
     files: ['src/utils/logger.ts', 'src/utils/devLog.ts'],
     rules: { 'no-console': 'off' },

@@ -18,7 +18,9 @@ Player control, secure credential storage, app updates and event listeners for t
 - `allow-set-fullscreen`
 - `allow-get-property`
 - `allow-network-status`
+- `allow-note-exit-requested`
 - `allow-device-info`
+- `allow-last-exit-report`
 - `allow-secure-get`
 - `allow-secure-set`
 - `allow-secure-delete`
@@ -172,6 +174,32 @@ Denies the install_update command without any pre-configured scope.
 <tr>
 <td>
 
+`nyx-android:allow-last-exit-report`
+
+</td>
+<td>
+
+Enables the last_exit_report command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`nyx-android:deny-last-exit-report`
+
+</td>
+<td>
+
+Denies the last_exit_report command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
 `nyx-android:allow-network-status`
 
 </td>
@@ -191,6 +219,32 @@ Enables the network_status command without any pre-configured scope.
 <td>
 
 Denies the network_status command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`nyx-android:allow-note-exit-requested`
+
+</td>
+<td>
+
+Enables the note_exit_requested command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`nyx-android:deny-note-exit-requested`
+
+</td>
+<td>
+
+Denies the note_exit_requested command without any pre-configured scope.
 
 </td>
 </tr>

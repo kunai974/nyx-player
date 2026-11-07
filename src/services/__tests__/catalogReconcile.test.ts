@@ -22,6 +22,7 @@ vi.mock('../dbCore', () => ({
       : watchlist.map(({ tmdb_id, type }) => ({ tmdb_id, type }))),
     execute: (...args: unknown[]) => mockExecute(...args),
   })),
+  getDatabaseFileName: () => 'nyxplayer_a.db',
 }));
 
 vi.mock('../../utils/devLog', () => ({ devLog: vi.fn() }));
@@ -29,6 +30,7 @@ vi.mock('../../utils/devLog', () => ({ devLog: vi.fn() }));
 let providerHash: string | null = 'hash-actuel';
 vi.mock('../preferencesService', () => ({
   getLastProviderHash: () => providerHash,
+  isTmdbTitleSearchEnabled: () => true,
 }));
 
 const mockPush = vi.fn(async () => {});
@@ -64,6 +66,7 @@ import {
   relinkWatchlistAfterRefresh,
   resetCatalogCaches,
 } from '../catalogReconcile';
+import { currentCatalogFor } from '../titleTmdbLinkStore';
 
 function indexes(movies: Array<[number, number]>): LightIndexes {
   const byTmdb = new Map(movies.map(([id, tmdbId]) => [tmdbId, { id, tmdbId }]));
@@ -202,6 +205,8 @@ describe('prepareRefreshedCatalog / applyRefreshedCatalog', () => {
     expect(mockInstall).toHaveBeenCalledWith(dashboard);
     // Ma liste relue avec le nouveau catalogue, dans le même geste
     expect(order).toEqual(['catalogue', 'accueil', 'ma liste', 'fiches']);
+    // Catalogue à l'écran : celui où les fiches trouvées par le titre posent leurs liens
+    expect(currentCatalogFor('nyxplayer_a.db')).toBe(fresh);
   });
 
   it('resetCatalogCaches vide l\'accueil et les fiches', () => {

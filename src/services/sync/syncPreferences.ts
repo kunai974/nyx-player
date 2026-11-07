@@ -9,6 +9,13 @@ import type { SyncResult, CloudPref } from './syncTypes';
 import { isoToMs } from './syncTypes';
 import { isSameAccount } from './syncBaseline';
 import { cloudWriteError } from './cloudRefusal';
+import { providerTablesOn } from './cloudScope';
+
+/**
+ * Préférence du fournisseur partagée par le compte. Tables par fournisseur : ni envoyée ni reçue,
+ * chaque appareil garde le sien (preferencesService.setLastProviderHash).
+ */
+const SHARED_PROVIDER_KEY = 'last_provider_hash';
 
 export async function syncPreferences(userId: string, result: SyncResult): Promise<void> {
   const db = await getDatabase();
@@ -21,8 +28,10 @@ export async function syncPreferences(userId: string, result: SyncResult): Promi
 
   if (error) throw new Error(`Supabase fetch prefs: ${error.message}`);
 
+  const skipProviderKey = providerTablesOn();
   const cloudMap = new Map<string, CloudPref>();
   for (const row of (cloudPrefs || [])) {
+    if (skipProviderKey && row.key === SHARED_PROVIDER_KEY) continue;
     cloudMap.set(row.key, row);
   }
 
@@ -33,6 +42,7 @@ export async function syncPreferences(userId: string, result: SyncResult): Promi
 
   const localMap = new Map<string, { value: string; updated_at: number }>();
   for (const row of localRows) {
+    if (skipProviderKey && row.key === SHARED_PROVIDER_KEY) continue;
     localMap.set(row.key, { value: row.value, updated_at: row.updated_at });
   }
 

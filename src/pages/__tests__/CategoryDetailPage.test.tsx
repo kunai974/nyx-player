@@ -27,6 +27,8 @@ beforeEach(() => {
   vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(1200);
   vi.spyOn(HTMLElement.prototype, 'offsetWidth', 'get').mockReturnValue(1200);
   vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockReturnValue(720);
+  // @tanstack/virtual-core ≥ 3.19 mesure la hauteur du conteneur avec clientHeight (et non plus offsetHeight)
+  vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockReturnValue(720);
   cardRenders.mockClear();
 });
 

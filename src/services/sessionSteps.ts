@@ -10,7 +10,8 @@ import type { XtreamCredentials } from '../types/iptv';
 import type { LightIndexes } from '../types/lightIndex';
 import type { XtreamUserInfo } from '../types/xtream';
 import { XtreamApiService } from './xtreamApi';
-import { ingestCatalog, whenEpgLinksReady } from './catalogIngestion';
+import { ingestCatalog, ingestM3uCatalog, whenEpgLinksReady } from './catalogIngestion';
+import { isM3uListCredentials } from './sources/m3uListCredentials';
 import { loadLightIndexes } from './catalogLight';
 import { setMeta, getMeta, refreshConnection, getDatabase, getDatabaseFileName, isDatabaseOf } from './dbCore';
 import { rebuildSearchIndex } from './searchIndex';
@@ -27,6 +28,7 @@ import { getCurrentSyncUserId, fetchCloudProviderHash, pushWatchlistUpdates, pur
 import { relinkWatchlistStreamIds } from './watchlistRelinking';
 import { deviceProviderHash, updateWatchlistOrigins, watchlistRowKey } from './watchlistAvailability';
 import { clearBaselines } from './sync/syncBaseline';
+import { PROVIDER_DATA_SCOPES, providerTablesOn } from './sync/cloudScope';
 import { supabase } from './supabaseClient';
 import { noteListsToRetry, startCatalogAutoRefresh } from './catalogAutoRefresh';
 import { readChangesSeq } from './catalogSwapGate';
@@ -111,6 +113,9 @@ export async function initServices(): Promise<void> {
 
 /** Actualisation toutes les 12 h pour la session qui vient de s'ouvrir */
 export function startAutoRefresh(creds: XtreamCredentials): void {
+    // L'actualisation en arrière-plan compare les listes de l'API Xtream ; une liste M3U se relit
+    // en entier par « Actualiser »
+    if (isM3uListCredentials(creds)) return;
     const dbName = getDatabaseFileName();
     if (!dbName) return;
     startCatalogAutoRefresh({ creds, dbName, userId: getCurrentSyncUserId() });
@@ -121,27 +126,37 @@ export function readSeqSafely(): Promise<number> {
     return readChangesSeq().catch(() => 0);
 }
 
-/** Séquence commune : authenticate → ingest → rebuild indexes */
+/**
+ * Séquence commune : authenticate → ingest → rebuild indexes. Liste M3U : pas de compte à
+ * authentifier (`userInfo` nul), la liste est lue en entier.
+ */
 export async function performIngestion(
     creds: XtreamCredentials,
     onProgress: (p: number) => void,
     isStillCurrent: () => boolean = () => true,
-): Promise<{ indexes: LightIndexes; userInfo: XtreamUserInfo; partial: boolean; failedEndpoints: string[]; changesSeq: number }> {
-    // Authenticate
-    devLog('session', 'Authentification en cours...');
-    const api = new XtreamApiService(creds);
-    onProgress(5);
-    const authResult = await api.authenticate();
-    devLog('session', 'Authentification réussie', { status: authResult.user_info.status });
+): Promise<{ indexes: LightIndexes; userInfo: XtreamUserInfo | null; partial: boolean; failedEndpoints: string[]; changesSeq: number }> {
+    const m3uList = isM3uListCredentials(creds);
+    let userInfo: XtreamUserInfo | null = null;
+    if (!m3uList) {
+        // Authenticate
+        devLog('session', 'Authentification en cours...');
+        const api = new XtreamApiService(creds);
+        onProgress(5);
+        const authResult = await api.authenticate();
+        devLog('session', 'Authentification réussie', { status: authResult.user_info.status });
+        userInfo = authResult.user_info;
+    }
 
     // Ensure DB exists with all migrations
     await getDatabase();
     onProgress(10);
 
     // Rust Ingestion
-    devLog('data', 'Ingestion Rust en cours...');
+    devLog('data', m3uList ? 'Lecture de la liste M3U en cours...' : 'Ingestion Rust en cours...');
     const ingestStart = performance.now();
-    const ingestResult = await ingestCatalog(creds.host, creds.username, creds.password, undefined, isStillCurrent);
+    const ingestResult = m3uList
+        ? await ingestM3uCatalog(creds.m3u.url, undefined, isStillCurrent)
+        : await ingestCatalog(creds.host, creds.username, creds.password, undefined, isStillCurrent);
     devLog('data', `Ingestion Rust terminée (${(performance.now() - ingestStart).toFixed(0)}ms)`, {
         movies: ingestResult.movies_count,
         series: ingestResult.series_count,
@@ -190,7 +205,7 @@ export async function performIngestion(
     // Liste refusée car démesurée : les Paramètres le disent au lieu d'une simple « instabilité »
     await setMeta('lastTooLargeLists', JSON.stringify(ingestResult.too_large_endpoints ?? []));
 
-    return { indexes, userInfo: authResult.user_info, partial: ingestResult.partial, failedEndpoints: ingestResult.failed_endpoints, changesSeq };
+    return { indexes, userInfo, partial: ingestResult.partial, failedEndpoints: ingestResult.failed_endpoints, changesSeq };
 }
 
 /**
@@ -257,7 +272,10 @@ export async function detectProviderChangeOnLogin(host: string): Promise<Provide
             const cloudHash = await fetchCloudProviderHash(supaSession.user.id);
             if (cloudHash) {
                 cloudSpelling = await findKnownProviderSpelling(cloudHash, host, lastProvider);
-                if (!cloudSpelling) {
+                // Tables par fournisseur : la préférence du cloud ne sert plus qu'à retrouver l'écriture
+                // déjà connue du même serveur. Un autre fournisseur y est normal (autre appareil, ancienne
+                // version) et n'est pas un changement : rien n'est effacé
+                if (!cloudSpelling && !providerTablesOn()) {
                     devLog('session', '⚠️ Provider change detected via CLOUD');
                     return { changed: true, spelling: normalizeProviderHost(host) };
                 }
@@ -311,7 +329,8 @@ export async function wipeProviderSpecificData(): Promise<void> {
     resetHiddenCategories();
     // Vidé ici et purgé du cloud : le dernier accord avec le cloud ne vaut plus (sync/syncBaseline.ts)
     const syncUserId = getCurrentSyncUserId();
-    if (syncUserId) await clearBaselines(syncUserId, ['playback', 'livetv', 'hidden']);
+    // Les deux derniers accords de chaque type (tables d'une seule source et par fournisseur)
+    if (syncUserId) await clearBaselines(syncUserId, PROVIDER_DATA_SCOPES);
     devLog('session', '🧹 Wiped provider-specific local data (playback, favorites, pins, player prefs, hidden categories, series episodes)');
 }
 

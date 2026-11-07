@@ -8,6 +8,7 @@ import { cleanTitle } from '../../utils/itemHelpers';
 import { getMovieDetail } from '../../services/detailFetcher';
 import { StorageService } from '../../services/storage';
 import { XtreamApiService } from '../../services/xtreamApi';
+import { getM3uSeriesEpisodes } from '../../services/m3uCatalog';
 import type { PlaybackProgressItem } from '../../services/playbackProgressService';
 import type { PlayableItem, DirectPlayableItem, PlayOptions } from '../../types/player';
 import type { LightIndexes } from '../../types/lightIndex';
@@ -176,10 +177,13 @@ export function buildContinueItems(
 
                         // Background: charger les infos série pour navigation épisodes
                         try {
-                            const creds = await StorageService.getCredentials();
-                            if (creds && item.seriesId) {
-                                const api = new XtreamApiService(creds);
-                                const xtreamInfo = await api.getSeriesInfo(item.seriesId);
+                            if (item.seriesId) {
+                                // Série d'une liste M3U : épisodes pris dans le catalogue, sans fournisseur Xtream
+                                const m3uEpisodes = await getM3uSeriesEpisodes(item.seriesId);
+                                const creds = m3uEpisodes ? null : await StorageService.getCredentials();
+                                const xtreamInfo = m3uEpisodes
+                                    ? { episodes: m3uEpisodes, info: undefined }
+                                    : creds ? await new XtreamApiService(creds).getSeriesInfo(item.seriesId) : null;
                                 if (xtreamInfo) {
                                     const seriesInfo: AppSeriesInfo = {
                                         num: 0,

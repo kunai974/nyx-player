@@ -6,6 +6,7 @@ import { supabase } from '../supabaseClient';
 import { getCurrentSyncUserId } from './syncState';
 import { getMeta, setMeta } from '../dbCore';
 import { isSameAccount, clearBaselines } from './syncBaseline';
+import { PROVIDER_DATA_SCOPES, providerTablesOn, cloudTable, type CloudDataKind } from './cloudScope';
 import { devLog } from '../../utils/devLog';
 import { createLogger } from '../../utils/logger';
 
@@ -15,8 +16,21 @@ const providerLog = createLogger('Provider');
 /** Tables effacées par « Supprimer aussi mes données cloud » */
 export const CLOUD_PURGE_TABLES = ['user_preferences', 'user_watchlist', 'user_playback_progress', 'user_livetv_bookmarks', 'user_hidden_categories'] as const;
 
+const PROVIDER_KINDS: CloudDataKind[] = ['watchlist', 'playback', 'livetv', 'hidden'];
+
 /**
- * Purge toutes les données cloud du user connecté (5 tables).
+ * Tables à vider pour « Supprimer aussi mes données cloud ». Tables par fournisseur allumées : aussi
+ * les tables `…_v2`, car un retrait dans les anciennes n'y est recopié que pour les lignes écrites
+ * par une ancienne version ; ce que la nouvelle version y a écrit resterait.
+ */
+function cloudPurgeTables(): string[] {
+  const tables: string[] = [...CLOUD_PURGE_TABLES];
+  if (providerTablesOn()) tables.push(...PROVIDER_KINDS.map((kind) => cloudTable(kind, true)));
+  return tables;
+}
+
+/**
+ * Purge toutes les données cloud du user connecté (5 tables, 9 avec les tables par fournisseur).
  * Appelé par performFullReset quand l'option purgeCloud est cochée.
  * Retourne les tables qui n'ont pas pu être vidées (vide si tout est effacé) : un échec n'est plus
  * seulement journalisé, l'appelant prévient l'utilisateur.
@@ -25,11 +39,11 @@ export async function purgeCloudData(): Promise<string[]> {
   const currentUserId = getCurrentSyncUserId();
   if (!currentUserId) {
     log.warn('purgeCloudData: no user connected, nothing purged');
-    return [...CLOUD_PURGE_TABLES];
+    return cloudPurgeTables();
   }
 
   const failed: string[] = [];
-  for (const table of CLOUD_PURGE_TABLES) {
+  for (const table of cloudPurgeTables()) {
     try {
       const { error } = await supabase
         .from(table)
@@ -84,6 +98,13 @@ const validHash = (hash: string | null | undefined): string | null =>
  */
 export async function purgeProviderCloudData(userId: string, keepProviderHash?: string | null): Promise<boolean> {
   if (!isSameAccount(userId)) return false;
+  // Tables par fournisseur : chaque fournisseur garde ses données dans le cloud, rien n'est effacé.
+  // Les anciennes tables ne sont plus touchées : un retrait y serait recopié dans les nouvelles.
+  // Un effacement resté en attente d'avant n'a plus lieu d'être.
+  if (providerTablesOn()) {
+    await setMeta(PENDING_PURGE_KEY, '0');
+    return true;
+  }
   const keep = validHash(keepProviderHash);
   await setMeta(PENDING_PURGE_KEY, keep ?? '1');
   let purged = true;
@@ -106,7 +127,7 @@ export async function purgeProviderCloudData(userId: string, keepProviderHash?: 
   // (position, favori) vient d'être effacé avec le reste ; oublié, il est renvoyé à la synchro
   // suivante au lieu d'être pris pour un retrait fait ailleurs et effacé de l'appareil.
   if (purged && isSameAccount(userId)) {
-    await clearBaselines(userId, ['playback', 'livetv', 'hidden']);
+    await clearBaselines(userId, PROVIDER_DATA_SCOPES);
     await setMeta(PENDING_PURGE_KEY, '0');
   }
   devLog('sync', purged ? 'Provider-scoped cloud data purged' : 'Provider-scoped cloud purge pending');

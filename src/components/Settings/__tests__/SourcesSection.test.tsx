@@ -18,7 +18,7 @@ const { epg, prefs, autoRefresh, db, platform, rust } = vi.hoisted(() => ({
     requestSyncAbort: vi.fn(),
     cancelAbort: vi.fn(),
   },
-  prefs: { wifiOnly: false, setEpgWifiOnly: vi.fn() },
+  prefs: { wifiOnly: false, setEpgWifiOnly: vi.fn(), titleSearch: true, setTmdbTitleSearch: vi.fn(async (_enabled: boolean) => {}) },
   autoRefresh: { get: vi.fn(), set: vi.fn() },
   db: { programs: 0, matched: 0, reads: 0, tooLarge: null as string | null },
   platform: { mobile: false },
@@ -47,6 +47,8 @@ vi.mock('../../../services/epgService', () => ({
 vi.mock('../../../services/preferencesService', () => ({
   isEpgWifiOnly: () => prefs.wifiOnly,
   setEpgWifiOnly: prefs.setEpgWifiOnly,
+  isTmdbTitleSearchEnabled: () => prefs.titleSearch,
+  setTmdbTitleSearch: prefs.setTmdbTitleSearch,
 }));
 vi.mock('../../../services/catalogAutoRefresh', () => ({
   getAutoRefreshInfo: autoRefresh.get,
@@ -440,5 +442,16 @@ describe('SourcesSection — guide TV', () => {
   it('Windows : pas de réglage « Wi-Fi uniquement »', () => {
     renderSection({ epgEnabled: true });
     expect(screen.queryByText('epg_wifi_only_label')).toBeNull();
+  });
+});
+
+describe('SourcesSection — fiches TMDB par le titre', () => {
+  it('réglage allumé par défaut ; le couper l\'enregistre', () => {
+    renderSection();
+    const toggle = screen.getByTestId('settings-tmdb-title-search-toggle') as HTMLInputElement;
+    expect(toggle.checked).toBe(true);
+    fireEvent.click(toggle);
+    expect(toggle.checked).toBe(false);
+    expect(prefs.setTmdbTitleSearch).toHaveBeenCalledWith(false);
   });
 });

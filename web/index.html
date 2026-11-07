@@ -306,7 +306,7 @@
           </div>
           <div class="card__text">
             <h3>Private by design</h3>
-            <p>Your IPTV credentials never leave your device. No ads, no data sales.</p>
+            <p>Your IPTV credentials stay encrypted on your device: we cannot read them. No ads, no data sales.</p>
           </div>
         </article>
 
@@ -441,7 +441,8 @@
         </div>
         <div class="qa" data-reveal>
           <h3><button class="qa__q" aria-expanded="false"><span>Is my data collected or shared?</span><i aria-hidden="true"></i></button></h3>
-          <div class="qa__a"><div><p>Your IPTV credentials are encrypted on your device and never sent to our servers.
+          <div class="qa__a"><div><p>Your IPTV credentials are encrypted on your device and never sent to our servers,
+            except encrypted for your TV only if you connect it with your phone: we cannot read them.
             Your Nyx account syncs your watchlist, playback progress, favorites, and preferences
             between your devices. This data is private, secured, and never sold or used for advertising. See our
             <a href="privacy.html">Privacy Policy</a> for full details.</p></div></div>
@@ -507,9 +508,11 @@
       <div class="trust__grid">
         <article class="trust__card" data-reveal><h3>Windows says &ldquo;unknown publisher&rdquo;?</h3><p>That is normal for a new, independent app: Nyx is not yet signed with a paid Windows certificate. On the blue SmartScreen window, click <strong>More info</strong>, then <strong>Run anyway</strong>. You can verify what you run: the whole source is public and open to anyone.</p></article>
         <article class="trust__card" data-reveal><h3>Installing on Android &amp; Android TV</h3><p>Open the downloaded APK. If asked, allow installs from your browser or file manager (&ldquo;unknown sources&rdquo;) — you can switch it off again afterwards.</p></article>
+        <article class="trust__card" data-reveal><h3>Installing on a TV with Downloader</h3><p>On Android TV, open the free <strong>Downloader</strong> app, enter the code <strong>2679899</strong> (or the address <strong>nyxplayer.app/tv-apk</strong>) and press Go: the Nyx APK downloads, then choose <strong>Install</strong>. (Tested on Android TV; Fire TV not yet confirmed.)</p></article>
+        <article class="trust__card" data-reveal><h3>Connecting the TV with your phone</h3><p>On the TV, choose <strong>With my phone</strong> and scan the QR code: you type your account and your provider on the phone instead of with the remote. What you type is encrypted on the phone, for that TV only: it passes through a server in a form that server cannot read, and is not stored there. The code works once and expires after 10&nbsp;minutes. The remote still works too. <a href="https://github.com/kunai974/nyx-player/tree/main/web/tv">The code of this page is public.</a></p></article>
         <article class="trust__card" data-reveal><h3>Verify your download</h3><p>Each release on GitHub includes <code>SHA256SUMS.txt</code>, the SHA-256 fingerprint of every file. Compare it with your download. Every file also has a build certificate: check it with <code>gh attestation verify &lt;file&gt; --repo kunai974/nyx-player</code>.</p>
           <a class="trust__link" href="https://github.com/kunai974/nyx-player/releases" target="_blank" rel="noopener">See the releases &rarr;</a></article>
-        <article class="trust__card" data-reveal><h3>Your data stays yours</h3><p>Your IPTV credentials are encrypted on your device and never sent to us. No ads, nothing sold.</p>
+        <article class="trust__card" data-reveal><h3>Your data stays yours</h3><p>Your IPTV credentials are encrypted on your device and we can never read them. No ads, nothing sold.</p>
           <a class="trust__link" href="privacy.html">Privacy Policy &rarr;</a></article>
       </div>
     </section>

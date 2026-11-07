@@ -88,6 +88,14 @@ describe('useBackdropUrl', () => {
     expect(result.current).toBe('https://xtream/bg2.jpg');
   });
 
+  it('backdrop_path du fournisseur fait de chaînes vides : affiche à la place', () => {
+    const details = { images: { backdrops: [] } };
+    const { result } = renderHook(() => useBackdropUrl(details, ['', ' '], COVER, 0));
+    expect(result.current).toBe(COVER);
+    const mixed = renderHook(() => useBackdropUrl(details, ['', 'https://xtream/bg1.jpg'], COVER, 0));
+    expect(mixed.result.current).toBe('https://xtream/bg1.jpg');
+  });
+
   it('fallback vers TMDB backdrop_path simple (priorité 3)', () => {
     const details = {
       images: { backdrops: [] },

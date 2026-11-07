@@ -79,7 +79,15 @@
   "no_synopsis": "No synopsis available.",
   "password_show": "Show password",
   "password_hide": "Hide password",
+  "progress_reset_failed": "Progress could not be reset. Please try again.",
   "watchlist_update_failed": "My List could not be updated. Please try again.",
+  "tvlink_connected_account": "Signed in with your phone · account {{email}}",
+  "tvlink_connected_account_provider": "Signed in with your phone · account {{email}} · provider {{host}}",
+  "tvlink_connected_provider": "Provider added with your phone · {{host}}",
   "link_fallback_title": "This link can't be opened here",
-  "link_fallback_message": "Open this address on a phone or a computer: {{url}}"
+  "link_fallback_message": "Open this address on a phone or a computer: {{url}}",
+  "guest_leave_title": "Leave guest mode",
+  "guest_leave_confirm": "Go back to the welcome screen? Your data stays on this device: you will find it again by choosing “Continue without an account”.",
+  "guest_leave_action": "Leave",
+  "unnamed_category": "Uncategorized"
 }

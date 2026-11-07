@@ -14,6 +14,7 @@
  */
 
 import tmdb from './tmdbApi';
+import { guestRelayAllowsBackground } from './guestRelay';
 import { cacheMovieDetails, cacheSeriesDetails } from './tmdbCacheSqlite';
 import { getDatabaseFileName } from './dbCore';
 import { createLogger } from '../utils/logger';
@@ -48,6 +49,11 @@ async function drain(): Promise<void> {
   draining = true;
   try {
     for (let ref = queue.shift(); ref; ref = queue.shift()) {
+      // Invité : le relais garde ses dernières demandes du jour pour les fiches ouvertes à l'écran
+      if (!guestRelayAllowsBackground()) {
+        queue.length = 0;
+        break;
+      }
       try {
         await fetchAndCache(ref);
       } catch (err) {

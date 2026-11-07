@@ -145,7 +145,11 @@ export async function getCachedDetails<T>(
  * Cache TMDB details for a movie
  * Handles display_name/display_date unification
  */
-export async function cacheMovieDetails(tmdbId: number, data: TmdbMovieDetails): Promise<void> {
+export async function cacheMovieDetails(
+  tmdbId: number,
+  data: TmdbMovieDetails,
+  options: { notify?: boolean } = {},
+): Promise<void> {
   try {
     const db = await getDatabase();
     
@@ -170,7 +174,8 @@ export async function cacheMovieDetails(tmdbId: number, data: TmdbMovieDetails):
     );
     
     
-    notifyDetailsUpdate(tmdbId, 'movie');
+    // Fiche gardée pour la bannière de l'accueil : Ma liste n'a pas à se relire pour elle
+    if (options.notify !== false) notifyDetailsUpdate(tmdbId, 'movie');
   } catch (error) {
     log.error(`Failed to cache movie ${tmdbId}:`, error);
   }

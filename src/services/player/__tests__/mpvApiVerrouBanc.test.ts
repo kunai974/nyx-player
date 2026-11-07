@@ -25,6 +25,7 @@ async function load(audit: boolean) {
   vi.stubEnv('VITE_AUDIT', audit ? '1' : '');
   vi.stubEnv('VITE_BANC', audit ? '1' : '');
   const api = await import('../mpvApi');
+  await import('../../../dev/prisesBanc'); // outils du banc branchés, comme au démarrage (main.tsx)
   const banc = await import('../../../dev/bancAdresses');
   return { ...api, ...banc };
 }
@@ -224,7 +225,9 @@ describe('mpvApi — variante « vrai lecteur » du banc (VITE_BANC_LECTEUR=reel
     vi.stubEnv('VITE_AUDIT', '1');
     vi.stubEnv('VITE_BANC', '1');
     vi.stubEnv('VITE_BANC_LECTEUR', 'reel');
-    return { ...(await import('../mpvApi')), ...(await import('../../../dev/bancAdresses')) };
+    const api = await import('../mpvApi');
+    await import('../../../dev/prisesBanc');
+    return { ...api, ...(await import('../../../dev/bancAdresses')) };
   }
   beforeEach(() => {
     invoke.mockReset().mockResolvedValue(null);
@@ -256,5 +259,45 @@ describe('mpvApi — variante « vrai lecteur » du banc (VITE_BANC_LECTEUR=reel
     platform.android = true;
     await command('loadfile', [FAUX]);
     expect(android.command).toHaveBeenCalledWith('loadfile', [FAUX]);
+  });
+});
+
+describe('mpvApi — version du banc sans outils de test branchés (prise vide)', () => {
+  beforeEach(() => {
+    invoke.mockReset().mockResolvedValue(null);
+    android.command.mockReset().mockResolvedValue(undefined);
+    platform.android = false;
+  });
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it('refuse tout, même le faux fournisseur, et rien ne part vers mpv.exe ni Android', async () => {
+    vi.resetModules();
+    vi.stubEnv('VITE_AUDIT', '1');
+    vi.stubEnv('VITE_BANC', '1');
+    const { command, setProperty, getProperty, observeProperties, listenDesktopEvents } = await import('../mpvApi');
+    await expect(command('loadfile', [FAUX, 'replace'])).rejects.toThrow('non branchés');
+    await expect(command('loadfile', [VRAI, 'replace'])).rejects.toThrow('non branchés');
+    await expect(command('loadlist', [FAUX])).rejects.toThrow('non branchés');
+    await expect(setProperty('stream-open-filename', VRAI)).rejects.toThrow('non branchés');
+    await expect(command('stop')).rejects.toThrow('non branchés');
+    await expect(getProperty('time-pos')).rejects.toThrow('non branchés');
+    await expect(observeProperties(['time-pos'], () => {})).rejects.toThrow('non branchés');
+    await expect(listenDesktopEvents(() => {})).rejects.toThrow('non branchés');
+    platform.android = true;
+    await expect(command('loadfile', [FAUX, 'replace'])).rejects.toThrow('non branchés');
+    expect(invoke).not.toHaveBeenCalled();
+    expect(android.command).not.toHaveBeenCalled();
+  });
+
+  it('variante « vrai lecteur » : le faux fournisseur est refusé aussi, rien ne part vers mpv.exe', async () => {
+    vi.resetModules();
+    vi.stubEnv('VITE_AUDIT', '1');
+    vi.stubEnv('VITE_BANC', '1');
+    vi.stubEnv('VITE_BANC_LECTEUR', 'reel');
+    const { command } = await import('../mpvApi');
+    await expect(command('loadfile', [FAUX, 'replace'])).rejects.toThrow('non branchés');
+    expect(invoke).not.toHaveBeenCalled();
   });
 });

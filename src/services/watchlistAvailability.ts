@@ -18,6 +18,7 @@
 import type { LightIndexes, LightMovie, LightSeries } from '../types/lightIndex';
 import { getDatabase, getMeta, isDatabaseOf, setMeta } from './dbCore';
 import { computeProviderHash } from './preferencesService';
+import { isStaleTitleLink } from '../utils/lightIndexHelpers';
 import { createLogger } from '../utils/logger';
 
 const log = createLogger('Watchlist');
@@ -57,7 +58,8 @@ export function catalogItemMatchesRow(
   if (!item) return false;
   const sameTmdb = row.tmdb_id > 0 && item.tmdbId === row.tmdb_id;
   if (foreign.has(watchlistRowKey(row.stream_id, row.type))) return sameTmdb;
-  return sameTmdb || row.tmdb_id <= 0 || item.tmdbId <= 0;
+  // Entrée sans numéro : acceptée, sauf si elle avait un lien par le titre que son nom actuel ne permet plus de reposer
+  return sameTmdb || row.tmdb_id <= 0 || (item.tmdbId <= 0 && !isStaleTitleLink(item));
 }
 
 /**

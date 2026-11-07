@@ -19,12 +19,16 @@ import { UpdaterProvider } from './contexts/UpdaterContext';
 import { DevOverrideProvider } from './contexts/DevOverrideContext';
 import * as Sentry from '@sentry/react';
 import { sentryPrivacyOptions } from './utils/sentryScrub';
+import { SENTRY_RELEASE } from './utils/sentryRelease';
 import { isAndroid, isMobile, isMobileDevice, isTv, detectDeviceType, setTvMode, setPhoneMode, isTvOverrideEnabled, isPhoneOverrideEnabled } from './utils/platform';
 import { applyTvViewport, installDesktopTvZoom, resetDesktopZoom } from './utils/tvScale';
 import { installViewportHeightVar } from './utils/viewportHeight';
 import { installSpatialNavigation } from './utils/spatialNavigation';
 import { resetOnStartup as resetAndroidPlayer } from './services/player/androidPlayer';
+import { reportLastAbnormalExit } from './services/androidExitReport';
 import { AUDIT_BRIDGE_ENABLED, AuditBridge } from './dev/auditBridge';
+// Outils de test branchés sur les prises de l'appli (services/outilsTest.ts) : seule porte d'entrée de src/dev
+import './dev/prises';
 import { PerfRunner } from './dev/perfRunner/PerfRunner';
 import { runStartup } from './utils/startup';
 import { finishPendingAccountDeletion } from './services/accountDeletion';
@@ -70,10 +74,14 @@ const SENTRY_DSN = import.meta.env.VITE_SENTRY_DSN;
 const SENTRY_ENVIRONMENT = import.meta.env.VITE_AUDIT === '1'
   ? (import.meta.env.VITE_AUDIT_SENTRY === '1' ? 'tests-auto' : null)
   : import.meta.env.MODE;
+let sentryEnabled = false;
 if (SENTRY_DSN && !IS_PREVIEW && SENTRY_ENVIRONMENT) {
+  sentryEnabled = true;
   Sentry.init({
     dsn: SENTRY_DSN,
     environment: SENTRY_ENVIRONMENT,
+    // Version de l'app jointe à chaque envoi : comparer les erreurs d'une version à l'autre
+    release: SENTRY_RELEASE,
     // Masque partout (message, exceptions, extra, contextes, miettes y compris la copie brute des
     // arguments console, requête) : identifiants IPTV, hôte du fournisseur, paramètres d'adresse
     // (Supabase), jetons, identifiants de compte. Retours et transactions : même nettoyage.
@@ -81,6 +89,11 @@ if (SENTRY_DSN && !IS_PREVIEW && SENTRY_ENVIRONMENT) {
     ...sentryPrivacyOptions(),
   });
 }
+
+// Android : raison de la dernière fermeture anormale (plantage du lecteur, app tuée ou figée),
+// invisible autrement pour Sentry. Lue une seule fois, sans rien bloquer (services/androidExitReport.ts).
+// Sans Sentry (version de banc, aperçu, compilation sans DSN), rien n'est lu ni envoyé.
+if (sentryEnabled) void reportLastAbnormalExit();
 
 // ---------------------------------------------------------------------------
 // Delayed-show strategy: the Tauri window starts invisible (visible: false in

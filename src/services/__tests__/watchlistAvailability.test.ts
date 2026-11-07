@@ -69,6 +69,7 @@ import {
     updateWatchlistOrigins,
     watchlistRowKey,
 } from '../watchlistAvailability';
+import { markStaleTitleLink } from '../../utils/lightIndexHelpers';
 import { getHydratedWatchlist } from '../watchlistHydration';
 import { setMeta } from '../dbCore';
 import { requestMissingWatchlistDetails } from '../watchlistDetailsFill';
@@ -155,6 +156,16 @@ describe('isWatchlistRowAvailable', () => {
         const indexes = catalog([movie(100, 42)], [series(100, 77)]);
         expect(isWatchlistRowAvailable({ stream_id: 100, tmdb_id: 42, type: 'series' }, indexes, NONE)).toBe(false);
         expect(isWatchlistRowAvailable({ stream_id: 5, tmdb_id: 77, type: 'series' }, indexes, NONE)).toBe(true);
+    });
+
+    it('catalogItemMatchesRow refuses an entry whose title link was lost to a name change (number reused by another title)', () => {
+        const entry = { id: 1, name: 'Barbie (2023)', tmdbId: 0 } as unknown as LightMovie;
+        markStaleTitleLink(entry);
+        expect(catalogItemMatchesRow({ stream_id: 1, tmdb_id: 603, type: 'movie' }, entry, NONE)).toBe(false);
+        // Ligne sans numéro TMDB : rien à comparer
+        expect(catalogItemMatchesRow({ stream_id: 1, tmdb_id: 0, type: 'movie' }, entry, NONE)).toBe(true);
+        // Entrée jamais reliée : acceptée comme avant
+        expect(catalogItemMatchesRow({ stream_id: 1, tmdb_id: 603, type: 'movie' }, { id: 1, name: 'Dune', tmdbId: 0 } as unknown as LightMovie, NONE)).toBe(true);
     });
 
     it('catalogItemMatchesRow refuses a missing catalog entry', () => {

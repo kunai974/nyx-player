@@ -11,7 +11,9 @@ vi.mock('../hiddenCategoriesService', () => ({
   isHidden: (id: string, type: string) => hidden.has(`${id}::${type}`),
 }));
 
-import { liveTvLists, visibleLiveCategories } from '../liveTvLists';
+import { liveCategoryOf, liveTvLists, visibleLiveCategories } from '../liveTvLists';
+import { OTHER_CATEGORY_ID } from '../../utils/otherCategory';
+import i18n from '../../i18n/config';
 
 function makeIndexes(): LightIndexes {
   return {
@@ -67,5 +69,31 @@ describe('liveTvLists', () => {
     expect(visibleLiveCategories(indexes).map(c => c.category_id)).toEqual(['10']);
     // Le cache complet garde toutes les catégories
     expect(liveTvLists(indexes).categories).toHaveLength(2);
+  });
+
+  it('chaîne sans catégorie ou dans une catégorie que le fournisseur ne liste pas : catégorie « Autres », en dernier', async () => {
+    await i18n.changeLanguage('fr');
+    const indexes = makeIndexes();
+    indexes.live.set(3, { id: 3, name: 'Sans catégorie', iconPrefixId: -1, iconSuffix: '', categoryId: '' });
+    indexes.live.set(4, { id: 4, name: 'Catégorie inconnue', iconPrefixId: -1, iconSuffix: '', categoryId: '99' });
+    // Numéro d'une catégorie de films : pas une catégorie live
+    indexes.live.set(5, { id: 5, name: 'Mal rangée', iconPrefixId: -1, iconSuffix: '', categoryId: '20' });
+    const lists = liveTvLists(indexes);
+    expect(lists.categories.map(c => c.category_id)).toEqual(['10', '11', OTHER_CATEGORY_ID]);
+    expect(lists.categories[2].category_name).toBe('Autres');
+    expect(lists.streams.filter(s => s.category_id === OTHER_CATEGORY_ID).map(s => s.stream_id)).toEqual([3, 4, 5]);
+    expect(lists.streams[0].category_id).toBe('10');
+    // Zapping : la chaîne en cours est retrouvée dans « Autres »
+    expect(liveCategoryOf(indexes, '')).toBe(OTHER_CATEGORY_ID);
+    expect(liveCategoryOf(indexes, '11')).toBe('11');
+    expect(visibleLiveCategories(indexes).map(c => c.category_id)).toEqual(['10', '11', OTHER_CATEGORY_ID]);
+    // Changement de langue : le nom suit, sans nouveau catalogue
+    await i18n.changeLanguage('en');
+    expect(liveTvLists(indexes).categories[2].category_name).toBe('Other');
+    await i18n.changeLanguage('fr');
+  });
+
+  it('toutes les chaînes rangées : pas de catégorie « Autres »', () => {
+    expect(liveTvLists(makeIndexes()).categories.map(c => c.category_id)).not.toContain(OTHER_CATEGORY_ID);
   });
 });

@@ -26,6 +26,7 @@ import {
   watchlistRowKey,
 } from './watchlistAvailability';
 import { requestMissingWatchlistDetails } from './watchlistDetailsFill';
+import { relinkWatchlistOrphansByTitle } from './watchlistTitleRelink';
 import { createLogger } from '../utils/logger';
 
 const log = createLogger('Watchlist');
@@ -115,21 +116,55 @@ export async function getHydratedWatchlist(
     ORDER BY w.added_at DESC
   `);
 
+  // Ligne sans numéro TMDB dont le titre a été relié par son nom (fournisseur sans numéro) : le nom et
+  // l'affiche TMDB se lisent au numéro du lien, comme pour une ligne qui a son numéro
+  const linkedIds = new Map<number, number>();
+  // Titre noté comme venant d'un autre fournisseur : jamais le nom ni l'affiche de l'entrée qui a repris son numéro
+  const foreign = foreignWatchlistRows(await readWatchlistOrigins(), await deviceProviderHash());
+  /** Numéro TMDB trouvé par le titre pour l'entrée d'une ligne qui n'a pas de numéro, sinon 0 */
+  const catalogLinked = (row: WatchlistJoinRow): number => {
+    if (row.tmdb_id > 0) return 0;
+    const item = catalogItemAt(row, lightIndexes);
+    return item && catalogItemMatchesRow(row, item, foreign) ? Math.max(item.tmdbId, 0) : 0;
+  };
+  const linkedFor = (row: WatchlistJoinRow): number => (row.display_name ? 0 : catalogLinked(row));
+  for (const row of rows) {
+    const id = linkedFor(row);
+    if (id > 0) linkedIds.set(row.stream_id * 2 + (row.type === 'movie' ? 0 : 1), id);
+  }
+  if (linkedIds.size > 0) {
+    const ids = [...new Set(linkedIds.values())];
+    const cached = await db.select<Array<{ tmdb_id: number; type: 'movie' | 'series'; display_name: string | null; poster_path: string | null }>>(
+      `SELECT tmdb_id, type, display_name, poster_path FROM tmdb_details_cache WHERE season_number = 0 AND tmdb_id IN (${ids.map(() => '?').join(',')})`,
+      ids,
+    );
+    for (const row of rows) {
+      const id = linkedIds.get(row.stream_id * 2 + (row.type === 'movie' ? 0 : 1));
+      const hit = id ? cached.find((c) => c.tmdb_id === id && c.type === row.type) : undefined;
+      if (hit) { row.display_name = hit.display_name; row.poster_path = hit.poster_path; }
+    }
+    // Fiche pas encore en cache : demandée à TMDB, Ma liste se relit quand elle arrive
+    requestMissingWatchlistDetails(rows
+      .filter((row) => linkedIds.has(row.stream_id * 2 + (row.type === 'movie' ? 0 : 1)) && !row.display_name)
+      .map((row) => ({ tmdb_id: linkedIds.get(row.stream_id * 2 + (row.type === 'movie' ? 0 : 1)) ?? 0, type: row.type })));
+  }
+
   // Safety net: deduplicate by (tmdb_id, type) — keep first occurrence (most recent, since ORDER BY added_at DESC)
-  // Items with tmdb_id=0 are never deduped (different stream_id = different item)
+  // Items with tmdb_id=0 are never deduped (different stream_id = different item), sauf ceux dont le titre a
+  // été relié par son nom : ils se comptent au numéro du lien, comme une ligne qui l'aurait déjà
+  // (« Dune » ajouté avant le lien, puis sa version 4K ajoutée après : une seule carte)
   const seen = new Set<string>();
   const dedupedRows = rows.filter(row => {
-    if (row.tmdb_id <= 0) return true;
-    const key = `${row.tmdb_id}:${row.type}`;
+    const effectiveId = row.tmdb_id > 0 ? row.tmdb_id : catalogLinked(row);
+    if (effectiveId <= 0) return true;
+    const key = `${effectiveId}:${row.type}`;
     if (seen.has(key)) return false;
     seen.add(key);
     return true;
   });
-  
+
   // Titres introuvables chez le fournisseur actuel (watchlistAvailability.ts) : jamais le nom ni
   // l'affiche de la fiche qui a repris leur numéro, et marqués pour ne pas ouvrir un autre titre
-  const foreign = foreignWatchlistRows(await readWatchlistOrigins(), await deviceProviderHash());
-
   const items = dedupedRows.map((row): HydratedWatchlistItem => {
     const ref = { stream_id: row.stream_id, tmdb_id: row.tmdb_id, type: row.type };
     const atNumber = catalogItemAt(ref, lightIndexes);
@@ -152,6 +187,11 @@ export async function getHydratedWatchlist(
   // appareil) : sa fiche est demandée à TMDB par son numéro ; Ma liste se relit quand elle arrive
   requestMissingWatchlistDetails(dedupedRows.filter((row, i) =>
     row.tmdb_id > 0 && !row.display_name && (!items[i].name || !items[i].posterUrl)));
+
+  // Titre introuvable dont la liste a peut-être une entrée du même nom sans numéro TMDB (liste M3U) :
+  // rattaché en local par son titre et son année ; Ma liste se relit quand un lien est posé
+  const orphans = items.filter((item) => item.isOrphan && item.tmdb_id > 0);
+  if (orphans.length > 0) void relinkWatchlistOrphansByTitle(lightIndexes, orphans);
 
   return items;
 }

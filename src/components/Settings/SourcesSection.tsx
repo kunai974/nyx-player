@@ -13,6 +13,8 @@ import { useTranslation } from 'react-i18next';
 import type { XtreamCredentials } from '../../types/iptv';
 import type { LightIndexes } from '../../types/lightIndex';
 import SourceForm from './SourceForm';
+import { isM3uListCredentials } from '../../services/sources/m3uListCredentials';
+import TmdbTitleSearchOption from './TmdbTitleSearchOption';
 import AccountInfoCard from './AccountInfoCard';
 import CategoryManagerModal from './CategoryManagerModal';
 import ConfirmModal from '../Common/ConfirmModal';
@@ -57,6 +59,8 @@ interface SourcesSectionProps {
         tmdbSeries?: number;
         tmdbMovieRate?: number;
         tmdbSeriesRate?: number;
+        tmdbMovieTitleRate?: number;
+        tmdbSeriesTitleRate?: number;
     };
     iptvStatus?: 'ok' | 'warning' | 'error';
     isRefreshing?: boolean;
@@ -390,6 +394,7 @@ const SourcesSection: React.FC<SourcesSectionProps> = ({
                 forceExpiration={forceExpiration}
                 forceTmdbMovieRate={forceTmdbMovieRate}
                 forceTmdbSeriesRate={forceTmdbSeriesRate}
+                showSubscription={!isM3uListCredentials(credentials)}
             />
 
             {/* Category Manager Button */}
@@ -419,7 +424,8 @@ const SourcesSection: React.FC<SourcesSectionProps> = ({
             </div>
 
             {/* ===== Actualisation automatique ===== */}
-            {autoRefresh && (
+            {/* Liste M3U : relue en entier par « Actualiser », sans actualisation automatique */}
+            {autoRefresh && !isM3uListCredentials(credentials) && (
                 <div className="settings-subsection">
                     <h4>🔄 {t('auto_refresh_title')}</h4>
                     <div className="settings-options">
@@ -453,6 +459,14 @@ const SourcesSection: React.FC<SourcesSectionProps> = ({
                     </div>
                 </div>
             )}
+
+            {/* ===== Fiches TMDB par le titre (M3U, fournisseurs sans numéro TMDB) ===== */}
+            <div className="settings-subsection">
+                <h4>{t('tmdb_title_search_title')}</h4>
+                <div className="settings-options">
+                    <TmdbTitleSearchOption />
+                </div>
+            </div>
 
             {/* ===== EPG (Guide TV) Toggle ===== */}
             <div className="settings-subsection">

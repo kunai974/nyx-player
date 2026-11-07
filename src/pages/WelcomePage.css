@@ -1,0 +1,100 @@
+/* ============================================================================
+ * WelcomePage.css — Écran d'arrivée de la TV (deux tuiles)
+ * Tokens déclarés dans App.css :root — var() seulement.
+ * ========================================================================= */
+
+.welcome {
+    display: flex;
+    flex-wrap: nowrap;
+    align-items: center;
+    justify-content: center;
+    /* stylelint-disable-next-line defensive-css/require-dynamic-viewport-height -- vh = dvh en WebView, dvh inconnu avant Chrome 108 */
+    height: 100vh;
+    width: 100%;
+    position: relative;
+    background: transparent;
+}
+
+.welcome__content {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--space-6);
+    padding: var(--space-6);
+    width: 100%;
+    max-width: 60rem;
+}
+
+.welcome__logo {
+    height: 5rem;
+    width: auto;
+    display: block;
+    filter: drop-shadow(0 0 1rem rgba(255, 255, 255, 0.15));
+}
+
+.welcome__title {
+    margin: 0;
+    font-size: var(--text-2xl);
+    font-family: var(--font-display);
+    font-weight: var(--font-bold);
+    color: var(--text-secondary);
+    text-align: center;
+    line-height: var(--leading-tight);
+}
+
+.welcome__tiles {
+    display: flex;
+    flex-wrap: nowrap;
+    justify-content: center;
+    gap: var(--space-6);
+    width: 100%;
+}
+
+.welcome-tile {
+    display: flex;
+    flex-direction: column;
+    flex: 1 1 0;
+    min-width: 0;
+    max-width: 24rem;
+    align-items: center;
+    justify-content: center;
+    gap: var(--space-3);
+    padding: var(--space-7) var(--space-5);
+    border: 0.125rem solid var(--border-glass);
+    border-radius: var(--radius-xl);
+    background: var(--surface-modal);
+    color: var(--text-primary);
+    font-family: var(--font-body);
+    text-align: center;
+    cursor: pointer;
+    transition: border-color var(--duration-fast) var(--ease-out), background-color var(--duration-fast) var(--ease-out);
+}
+
+.welcome-tile__label {
+    font-family: var(--font-display);
+    font-size: var(--text-xl);
+    font-weight: var(--font-bold);
+}
+
+.welcome-tile__hint {
+    font-size: var(--text-md);
+    color: var(--text-muted);
+    line-height: var(--leading-tight);
+}
+
+@media (hover: hover) {
+    .welcome-tile:hover {
+        border-color: var(--nyx-blue-light);
+        background: var(--nyx-blue-subtle);
+    }
+}
+
+.welcome-tile:focus-visible {
+    border-color: var(--nyx-blue-light);
+    background: var(--nyx-blue-subtle);
+    outline: none;
+}
+
+.welcome-tile:active {
+    background: var(--nyx-blue-hover);
+}

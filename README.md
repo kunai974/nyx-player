@@ -34,9 +34,12 @@ and plays it with [mpv](https://mpv.io/).
 Builds for Windows and Android are published on the [Releases](../../releases) page and on
 [nyxplayer.app](https://nyxplayer.app).
 
+**Android TV with Downloader:** open the free [Downloader](https://www.aftvnews.com/downloader/) app,
+enter the code `2679899` (or the address `nyxplayer.app/tv-apk`) and press Go, then install the APK. (Tested on Android TV; Fire TV not yet confirmed.)
+
 ## Build from source
 
-Requirements: Node.js 20.19+ or 22.12+ (22.12+ recommended), [pnpm](https://pnpm.io/) 10,
+Requirements: Node.js 22.22+ (needed by the test environment, jsdom 30), [pnpm](https://pnpm.io/) 10,
 [Rust](https://rustup.rs/) (stable), and for Android the
 [Tauri 2 Android prerequisites](https://v2.tauri.app/start/prerequisites/) (Android SDK, NDK, JDK 17).
 Android 8.0 (API 26) or later is required to run the app.

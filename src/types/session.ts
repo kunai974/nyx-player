@@ -66,6 +66,9 @@ export interface SettingsContentCounts {
     tmdbSeries: number;
     tmdbMovieRate: number;
     tmdbSeriesRate: number;
+    /** Part du taux ci-dessus due aux numéros trouvés par le titre (le reste vient du fournisseur) */
+    tmdbMovieTitleRate: number;
+    tmdbSeriesTitleRate: number;
 }
 
 export interface SessionActions {

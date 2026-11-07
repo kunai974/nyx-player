@@ -92,7 +92,7 @@ describe('suppressions - erreurs', () => {
     const spy = vi.fn();
     window.addEventListener(PLAYBACK_EVENT, spy);
     mockDb.execute.mockRejectedValueOnce(new Error('SQL'));
-    await expect(clearProgress(4)).resolves.toBeUndefined();
+    await expect(clearProgress(4)).rejects.toThrow('SQL');
     window.removeEventListener(PLAYBACK_EVENT, spy);
     expect(spy).not.toHaveBeenCalled();
     expect(pushPlaybackDeleteToCloud).not.toHaveBeenCalled();
@@ -112,13 +112,13 @@ describe('suppressions - erreurs', () => {
 
   it('clearMultipleProgress : rien envoyé au cloud si la suppression échoue', async () => {
     mockDb.execute.mockRejectedValueOnce(new Error('SQL'));
-    await clearMultipleProgress([1, 2]);
+    await expect(clearMultipleProgress([1, 2])).rejects.toThrow('SQL');
     expect(pushPlaybackDeleteToCloud).not.toHaveBeenCalled();
   });
 
-  it('clearProgressByType : renvoie 0 si la base échoue', async () => {
+  it('clearProgressByType : signale l\'échec (distinct de « rien à effacer »)', async () => {
     mockDb.select.mockRejectedValueOnce(new Error('SQL'));
-    expect(await clearProgressByType('movie')).toBe(0);
+    await expect(clearProgressByType('movie')).rejects.toThrow('SQL');
     expect(mockDb.execute).not.toHaveBeenCalled();
   });
 

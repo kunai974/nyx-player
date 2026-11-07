@@ -140,7 +140,7 @@ fn tables(conn: &Connection) -> Vec<Vec<Vec<SqlValue>>> {
         dump(conn, "SELECT * FROM movies ORDER BY id"),
         dump(conn, "SELECT * FROM series ORDER BY id"),
         dump(conn, "SELECT id, name, icon, category_id, epg_channel_id, geo_hint, data, sort_order FROM live ORDER BY id"),
-        dump(conn, "SELECT * FROM categories ORDER BY id"),
+        dump(conn, "SELECT * FROM categories ORDER BY type, id"),
     ]
 }
 
@@ -235,7 +235,7 @@ fn diff_refresh_equals_full_write() {
 #[test]
 fn diff_refresh_equals_full_write_with_gzip_and_shared_category_ids() {
     let (a, mut b) = (catalog_a(), catalog_b());
-    // Même numéro de catégorie pour un film et une chaîne : le dernier type gagne
+    // Même numéro de catégorie pour un film et une chaîne : les deux restent
     b.3[2].push(category("10", "Chaînes 10"));
     let mut expected = db();
     full_write(&mut expected, &b.0, &b.1, &b.2, [&b.3[0], &b.3[1], &b.3[2]]);
@@ -248,6 +248,7 @@ fn diff_refresh_equals_full_write_with_gzip_and_shared_category_ids() {
         apply_list_file(&mut conn, kind, &file.0, Mode::Manual, HOST, &never).unwrap();
     }
     assert_eq!(tables(&conn), tables(&expected));
+    assert_eq!(count(&conn, "SELECT COUNT(*) FROM categories WHERE id = '10'"), 2);
 
     // Rien de changé ensuite, même avec des numéros partagés entre types
     let again = apply_cats(&mut conn, [&b.3[0], &b.3[1], &b.3[2]]);
@@ -605,6 +606,26 @@ fn empty_category_type_is_kept() {
     assert_eq!(all_empty.outcome, Outcome::Kept);
 }
 
+/// Fournisseur qui numérote chaque type à part (retour du 02/11 : chaînes visibles, films et
+/// séries vides) : écriture complète puis actualisation gardent les catégories des trois types.
+#[test]
+fn categories_numbered_per_type_are_all_kept() {
+    let per_type = |name: &str| vec![category("1", &format!("{name} 1")), category("2", &format!("{name} 2"))];
+    let (movies, series, live) = (per_type("Films"), per_type("Séries"), per_type("Chaînes"));
+    let mut conn = db();
+    full_write(&mut conn, &[], &[], &[], [&movies, &series, &live]);
+    for kind in ["movie", "series", "live"] {
+        assert_eq!(count(&conn, &format!("SELECT COUNT(*) FROM categories WHERE type = '{kind}'")), 2, "{kind}");
+    }
+    assert_eq!(apply_cats(&mut conn, [&movies, &series, &live]).outcome, Outcome::Unchanged);
+
+    let renamed = vec![category("1", "Films 1 bis"), category("2", "Films 2")];
+    let s = apply_cats(&mut conn, [&renamed, &series, &live]);
+    assert_eq!((s.outcome, s.changed, s.removed), (Outcome::Applied, 1, 0));
+    assert_eq!(count(&conn, "SELECT COUNT(*) FROM categories"), 6);
+    assert_eq!(count(&conn, "SELECT COUNT(*) FROM categories WHERE type = 'live' AND name = 'Chaînes 1'"), 1);
+}
+
 #[test]
 fn renamed_live_category_marks_its_channels_for_the_guide() {
     let a = catalog_a();
@@ -957,6 +978,50 @@ fn full_load_then_refresh_keep_tmdb_cache_and_watchlist() {
             (40, Some(104)),
         ]
     );
+}
+
+// ---------------------------------------------------------------------------------------------
+// Fichier catalogue d'une source
+// ---------------------------------------------------------------------------------------------
+
+const SOURCE_FILE: &str = "nyxcat_550e8400-e29b-41d4-a716-446655440000_6a1e5c3b-9d2f-4e7a-b8c1-0d2e4f6a8b9c.db";
+
+fn source_dir(name: &str) -> PathBuf {
+    let dir = std::env::temp_dir().join(format!("nyx-refresh-source-{}-{}", name, std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    dir
+}
+
+#[test]
+fn refresh_works_on_a_source_file_without_any_personal_table() {
+    let dir = source_dir("diff");
+    let path = dir.join(SOURCE_FILE);
+    let (a, b) = (catalog_a(), catalog_b());
+    // Fichier tel que le chargement le crée : tables du catalogue seulement
+    let mut first = crate::catalog_parser::open_connection(&path).unwrap();
+    full_write(&mut first, &a.0, &a.1, &a.2, [&a.3[0], &a.3[1], &a.3[2]]);
+    drop(first);
+    let mut conn = open_refresh_connection(&path).unwrap();
+    // Séries disparues : leur cache de détails (table perso, absente ici) n'empêche rien
+    refresh_to(&mut conn, &b, Mode::Manual);
+    let mut expected = db();
+    full_write(&mut expected, &b.0, &b.1, &b.2, [&b.3[0], &b.3[1], &b.3[2]]);
+    assert_eq!(tables(&conn), tables(&expected));
+    let personal = count(&conn, "SELECT COUNT(*) FROM sqlite_master WHERE name IN ('playback_progress', 'xtream_series_cache', 'watchlist')");
+    assert_eq!(personal, 0);
+    drop(conn);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn refresh_never_recreates_the_file_of_a_deleted_source() {
+    let dir = source_dir("deleted");
+    let path = dir.join(SOURCE_FILE);
+    std::fs::write(dir.join(format!("{SOURCE_FILE}.delete-pending")), b"").unwrap();
+    assert!(open_refresh_connection(&path).is_err());
+    assert!(!path.exists());
+    let _ = std::fs::remove_dir_all(&dir);
 }
 
 #[test]

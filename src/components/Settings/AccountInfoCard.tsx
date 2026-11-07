@@ -31,6 +31,9 @@ interface ContentCounts {
     tmdbSeries?: number;
     tmdbMovieRate?: number;
     tmdbSeriesRate?: number;
+    /** Part du taux due aux numéros trouvés par le titre */
+    tmdbMovieTitleRate?: number;
+    tmdbSeriesTitleRate?: number;
 }
 
 interface AccountInfoCardProps {
@@ -42,6 +45,8 @@ interface AccountInfoCardProps {
     forceTmdbMovieRate?: number | null;
     /** DevPanel: force le taux TMDB séries */
     forceTmdbSeriesRate?: number | null;
+    /** Faux pour une liste M3U : pas d'abonnement (expiration, statut, connexions) à afficher */
+    showSubscription?: boolean;
 }
 
 // ============================================================================
@@ -59,6 +64,7 @@ const AccountInfoCard: React.FC<AccountInfoCardProps> = ({
     forceExpiration = null,
     forceTmdbMovieRate = null,
     forceTmdbSeriesRate = null,
+    showSubscription = true,
 }) => {
     const { t, i18n } = useTranslation('settings');
 
@@ -95,8 +101,8 @@ const AccountInfoCard: React.FC<AccountInfoCardProps> = ({
 
     return (
         <div className="settings-subsection">
-            <h4>{t('account_title')}</h4>
-            <div className="info-grid">
+            {showSubscription && <h4>{t('account_title')}</h4>}
+            {showSubscription && <div className="info-grid">
                 <div className="info-item">
                     <div className="info-label">{t('expiration')}</div>
                     <div
@@ -126,7 +132,7 @@ const AccountInfoCard: React.FC<AccountInfoCardProps> = ({
                         </div>
                     </div>
                 )}
-            </div>
+            </div>}
             {contentCounts && (
                 <div className="stats-row">
                     <div className="stat-item">
@@ -150,19 +156,35 @@ const AccountInfoCard: React.FC<AccountInfoCardProps> = ({
             {contentCounts && (() => {
                 const movieRate = forceTmdbMovieRate ?? contentCounts.tmdbMovieRate;
                 const seriesRate = forceTmdbSeriesRate ?? contentCounts.tmdbSeriesRate;
-                return (movieRate || seriesRate) ? (
+                // Quelques titres reliés dans un très grand catalogue (liste M3U sans numéros) : le taux arrondi
+                // vaut 0 %, mais la ligne dit qu'il y en a
+                const part = (rate: number | undefined, titleRate: number | undefined, linked: number) => {
+                    const total = rate || 0;
+                    const byTitle = Math.min(titleRate || 0, total);
+                    return (
+                        <>
+                            <span className="tmdb-rate-value" style={{ color: tmdbRateColor(total) }}>
+                                {total === 0 && linked > 0 ? t('tmdb_less_than_one') : `${total}%`}
+                            </span>
+                            {byTitle > 0 && (
+                                <span className="tmdb-rate-detail">
+                                    {' '}({t('tmdb_split', { provider: total - byTitle, title: byTitle })})
+                                </span>
+                            )}
+                        </>
+                    );
+                };
+                const linkedMovies = forceTmdbMovieRate === null ? contentCounts.tmdbMovies ?? 0 : 0;
+                const linkedSeries = forceTmdbSeriesRate === null ? contentCounts.tmdbSeries ?? 0 : 0;
+                return (movieRate || seriesRate || linkedMovies > 0 || linkedSeries > 0) ? (
                     <div className="tmdb-integration-row">
                         <span className="tmdb-label">{t('tmdb_integration')}</span>
                         <span className="tmdb-rates">
                             {t('movies')}{' '}
-                            <span className="tmdb-rate-value" style={{ color: tmdbRateColor(movieRate || 0) }}>
-                                {movieRate || 0}%
-                            </span>
+                            {part(movieRate, forceTmdbMovieRate === null ? contentCounts.tmdbMovieTitleRate : 0, linkedMovies)}
                             {' — '}
                             {t('series')}{' '}
-                            <span className="tmdb-rate-value" style={{ color: tmdbRateColor(seriesRate || 0) }}>
-                                {seriesRate || 0}%
-                            </span>
+                            {part(seriesRate, forceTmdbSeriesRate === null ? contentCounts.tmdbSeriesTitleRate : 0, linkedSeries)}
                         </span>
                     </div>
                 ) : null;

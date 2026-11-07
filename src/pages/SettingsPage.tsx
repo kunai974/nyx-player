@@ -10,6 +10,8 @@ import GeneralSection from '../components/Settings/GeneralSection';
 import DataSection from '../components/Settings/DataSection';
 import AboutSection from '../components/Settings/AboutSection';
 import AccountSection from '../components/Settings/AccountSection';
+import GuestAccountSection from '../components/Settings/GuestAccountSection';
+import { useSupabaseAuth } from '../contexts/SupabaseAuthContext';
 import ResetOptionsModal from '../components/Common/ResetOptionsModal';
 import ConfirmModal from '../components/Common/ConfirmModal';
 import { useDevOverrides } from '../contexts/DevOverrideContext';
@@ -26,12 +28,15 @@ interface SettingsPageProps {
   onProfileRenamed?: () => void;
   /** Affiché en bas de la liste des rubriques sur téléphone (plus de bouton dans la navigation) */
   onLogout?: () => void;
+  /** Invité : quitter l'espace invité pour se connecter ou créer un compte */
+  onLeaveGuest?: (intent: 'login' | 'register') => void;
 }
 
 // ============================================================================
 // COMPONENT
 // ============================================================================
-const SettingsPage: React.FC<SettingsPageProps> = ({ profileName, profileId, onProfileRenamed, onLogout }) => {
+const SettingsPage: React.FC<SettingsPageProps> = ({ profileName, profileId, onProfileRenamed, onLogout, onLeaveGuest }) => {
+  const { isGuest } = useSupabaseAuth();
   const {
     credentials: rawCredentials,
     accountInfo,
@@ -137,6 +142,9 @@ const SettingsPage: React.FC<SettingsPageProps> = ({ profileName, profileId, onP
       case 'about':
         return <AboutSection />;
       case 'account':
+        if (isGuest) {
+          return <GuestAccountSection onLeaveGuest={onLeaveGuest} onEraseDeviceData={data.handleFullResetClick} />;
+        }
         return (
           <AccountSection
             profileName={profileName}
@@ -216,9 +224,10 @@ const SettingsPage: React.FC<SettingsPageProps> = ({ profileName, profileId, onP
         testId="full-reset-modal"
         isOpen={data.showFullResetModal}
         title={t('btn_clear_cache')}
-        message={t('confirm_clear_cache')}
+        message={isGuest ? t('guest_confirm_reset') : t('confirm_clear_cache')}
         danger
-        checkbox={{
+        // Sans compte, rien n'est au cloud : pas de case « supprimer aussi mes données cloud »
+        checkbox={isGuest ? undefined : {
           label: t('purge_cloud_data'),
           hint: t('purge_cloud_data_hint'),
           checked: data.purgeCloud,

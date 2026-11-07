@@ -11,28 +11,40 @@ import { fetchAllRows } from './syncFetch';
 import { readBaseline, updateBaseline, planMerge, canStillWrite, runExclusive } from './syncBaseline';
 import { fitsCloudProviderId } from './cloudLimits';
 import { cloudWriteError } from './cloudRefusal';
+import { providerSyncScope, localKey, cloudKey, itemKeyOf, baselineForScope, ownedRowHashes } from './providerSync';
+import type { ProviderSyncScope } from './providerSync';
 import { createLogger } from '../../utils/logger';
 
 const log = createLogger('Sync');
 
 /**
  * Sync hidden categories : fusion à trois (local, cloud, dernier accord), comme syncLiveTv.
+ * Tables par fournisseur (sync/providerSync.ts) : seulement les catégories du fournisseur de l'appareil.
  */
 export function syncHiddenCategories(userId: string, result: SyncResult): Promise<void> {
-  return runExclusive('hidden', () => syncHiddenCategoriesNow(userId, result));
+  const scope = providerSyncScope('hidden');
+  if (!scope) {
+    log.warn('hiddenCategories: provider of this device unknown, not synced');
+    return Promise.resolve();
+  }
+  return runExclusive(scope.baselineScope, () => syncHiddenCategoriesNow(userId, result, scope));
 }
 
-async function syncHiddenCategoriesNow(userId: string, result: SyncResult): Promise<void> {
+async function syncHiddenCategoriesNow(userId: string, result: SyncResult, scope: ProviderSyncScope): Promise<void> {
   // Dernier accord lu en premier (avant le cloud et le local), voir syncBaseline.readBaseline
-  const baseline = await readBaseline(userId, 'hidden');
+  const baselineRead = await readBaseline(userId, scope.baselineScope);
+  const baseline = Object.assign(baselineForScope(scope, baselineRead), { generation: baselineRead.generation, scope: baselineRead.scope });
   const db = await getDatabase();
 
   // 1. Pull cloud — lu en entier, par pages et dans un ordre stable (limite PostgREST de 1000 lignes)
-  const allCloudRows = await fetchAllRows<CloudHiddenCategory>('user_hidden_categories', userId, ['category_type', 'category_id'], 'hiddenCategories');
+  const allCloudRows = await fetchAllRows<CloudHiddenCategory>(
+    scope.table, userId, scope.on ? ['provider_hash', 'category_type', 'category_id'] : ['category_type', 'category_id'], 'hiddenCategories',
+  );
 
   const cloudSet = new Set<string>();
   for (const row of allCloudRows) {
-    cloudSet.add(`${row.category_id}::${row.category_type}`);
+    const key = cloudKey(scope, row.provider_hash, `${row.category_id}::${row.category_type}`);
+    if (key !== null) cloudSet.add(key);
   }
 
   // 2. Pull local
@@ -43,7 +55,7 @@ async function syncHiddenCategoriesNow(userId: string, result: SyncResult): Prom
   const localSet = new Set<string>();
   // Catégorie au numéro démesuré : gardée ici, jamais envoyée (la base la refuserait)
   for (const row of localRows) {
-    if (fitsCloudProviderId(row.category_id)) localSet.add(`${row.category_id}::${row.type}`);
+    if (fitsCloudProviderId(row.category_id)) localSet.add(localKey(scope, `${row.category_id}::${row.type}`));
   }
 
   // 3. Fusion à trois (sync/syncBaseline.ts) : une catégorie réaffichée sur un autre appareil est
@@ -52,8 +64,10 @@ async function syncHiddenCategoriesNow(userId: string, result: SyncResult): Prom
   const plan = planMerge(localSet, cloudSet, baseline);
   if (!canStillWrite(userId, baseline)) return;
   const split = (key: string) => {
-    const at = key.lastIndexOf('::');
-    return { category_id: key.slice(0, at), category_type: key.slice(at + 2) };
+    // Clés de cette portée seulement (fusion faite sur le fournisseur de l'appareil)
+    const item = itemKeyOf(scope, key)!;
+    const at = item.lastIndexOf('::');
+    return { category_id: item.slice(0, at), category_type: item.slice(at + 2) };
   };
 
   // 4. Masquées ailleurs → insérer en local ; réaffichées ailleurs → retirer en local
@@ -93,15 +107,17 @@ async function syncHiddenCategoriesNow(userId: string, result: SyncResult): Prom
   for (const [categoryType, ids] of toRemoveByType) {
     for (let i = 0; i < ids.length; i += 200) {
       const chunk = ids.slice(i, i + 200);
-      const { error: delErr } = await supabase
-        .from('user_hidden_categories')
+      let request = supabase
+        .from(scope.table)
         .delete()
         .eq('user_id', userId)
         .eq('category_type', categoryType)
         .in('category_id', chunk);
+      if (scope.on) request = request.in('provider_hash', ownedRowHashes(scope));
+      const { error: delErr } = await request;
       if (delErr) log.warn('Hidden category cloud delete failed:', delErr.message);
       else {
-        removedFromCloud.push(...chunk.map((id) => `${id}::${categoryType}`));
+        removedFromCloud.push(...chunk.map((id) => localKey(scope, `${id}::${categoryType}`)));
         result.hiddenCategories.pushed += chunk.length;
       }
     }
@@ -111,7 +127,8 @@ async function syncHiddenCategoriesNow(userId: string, result: SyncResult): Prom
   const toPush = plan.pushToCloud.map(split);
   if (toPush.length > 0) {
     const CHUNK = 200;
-    const providerHash = getLastProviderHash(); // empreinte du fournisseur : sync/syncPurge.ts
+    // Empreinte du fournisseur : celle de l'appareil (tables par fournisseur), sinon sync/syncPurge.ts
+    const providerHash = scope.on ? scope.deviceHash : getLastProviderHash();
     for (let i = 0; i < toPush.length; i += CHUNK) {
       const chunk = toPush.slice(i, i + CHUNK);
       const rows = chunk.map((item) => ({
@@ -122,8 +139,8 @@ async function syncHiddenCategoriesNow(userId: string, result: SyncResult): Prom
       }));
 
       const { error: upsertErr } = await supabase
-        .from('user_hidden_categories')
-        .upsert(rows, { onConflict: 'user_id,category_id,category_type' });
+        .from(scope.table)
+        .upsert(rows, { onConflict: scope.on ? 'user_id,provider_hash,category_id,category_type' : 'user_id,category_id,category_type' });
 
       if (upsertErr) throw cloudWriteError('Supabase upsert hiddenCategories chunk', upsertErr);
     }
@@ -131,7 +148,7 @@ async function syncHiddenCategoriesNow(userId: string, result: SyncResult): Prom
   }
 
   // 8. Dernier accord
-  await updateBaseline(userId, 'hidden', {
+  await updateBaseline(userId, scope.baselineScope, {
     generation: baseline.generation,
     set: [...plan.inBoth, ...plan.pullToLocal, ...plan.pushToCloud].map((key) => [key, 0] as [string, number]),
     remove: [...plan.removeLocal, ...removedFromCloud, ...plan.stale],

@@ -47,7 +47,7 @@ const ProfileNameSetting: React.FC<ProfileNameSettingProps> = ({
       return;
     }
     if (!profileId || !userId) {
-      setRenameError('Profile ID missing');
+      setRenameError(t('unexpected_error'));
       return;
     }
 

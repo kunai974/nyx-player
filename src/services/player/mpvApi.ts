@@ -15,11 +15,12 @@
  * normalement.
  * Tout `loadfile` vers une adresse qui n'est pas celle d'un faux fournisseur local est refusé, sur
  * Windows comme sur Android. Aucun moyen de le lever. Une adresse
- * admise n'est pas lue non plus : le lecteur simulé (dev/lecteurSimule.ts) remplace mpv, sans aucune
+ * admise n'est pas lue non plus : le lecteur simulé (dev/lecteurSimule.ts, branché sur la prise
+ * `bancLecteur` de services/outilsTest.ts) remplace mpv, sans aucune
  * requête vers le flux. Seule exception, la variante « vrai lecteur » du banc (VITE_BANC_LECTEUR=reel) :
  * le même verrou, puis mpv lit l'adresse admise (les vidéos de test du faux fournisseur local).
  * Dans une version normale, la condition vaut false à la compilation : verrou et lecteur simulé
- * disparaissent.
+ * disparaissent. Dans une version du banc dont la prise est restée vide, tout est refusé.
  */
 
 import * as mpv from 'tauri-plugin-mpv-api';
@@ -29,11 +30,10 @@ import type { UnlistenFn } from '@tauri-apps/api/event';
 import { isAndroid } from '../../utils/platform';
 import * as android from './androidPlayer';
 import { cancelForcedUnpause } from './forcedUnpause';
-import { erreurLectureRefusee, natureAdresse, noterTentative } from '../../dev/bancAdresses';
-import * as simule from '../../dev/lecteurSimule';
+import { prises, VERSION_BANC, type LecteurSimule, type PriseBancLecteur } from '../outilsTest';
 
-/** Version du banc : évalué à la compilation, comme AUDIT_BRIDGE_ENABLED (dev/auditBridge.tsx). */
-const VERROU_BANC = import.meta.env.VITE_BANC === '1';
+/** Version du banc : évalué à la compilation (services/outilsTest.ts). */
+const VERROU_BANC = VERSION_BANC;
 /**
  * Lecteur simulé : toute version du banc, sauf la variante « vrai lecteur » (VITE_BANC_LECTEUR=reel,
  * zone 6 bis). Celle-ci garde le verrou (seule l'adresse d'un faux fournisseur local passe) mais
@@ -42,16 +42,25 @@ const VERROU_BANC = import.meta.env.VITE_BANC === '1';
  */
 const LECTEUR_SIMULE = VERROU_BANC && import.meta.env.VITE_BANC_LECTEUR !== 'reel';
 
+/** Version du banc dont les outils de test ne sont pas branchés : rien ne doit lire. */
+function outilsNonBranches(): Error {
+  return new Error('[BANC] outils de test non branchés : lecteur refusé');
+}
+
 /**
- * Verrou du banc : null si la lecture est permise, sinon l'erreur à rendre. L'adresse n'est jamais
- * écrite (ni console, ni erreur) : seule sa nature est notée, pour le pont d'audit.
+ * Verrou du banc (branché par src/dev/prisesBanc.ts) : l'adresse n'est jamais écrite (ni console, ni erreur), seule sa
+ * nature est notée, pour le pont d'audit. Prise vide : un verrou qui refuse tout.
  */
-function verrouBanc(args: unknown[] | undefined): Error | null {
-  const cible = natureAdresse(args?.[0]);
-  noterTentative(cible, cible === 'faux', args?.[0]);
-  if (cible === 'faux') return null;
-  console.warn('[BANC] lecture refusée : adresse hors du faux fournisseur');
-  return erreurLectureRefusee();
+function verrou(): Pick<PriseBancLecteur, 'verrouLecture' | 'refuser'> {
+  return prises.bancLecteur ?? { verrouLecture: outilsNonBranches, refuser: outilsNonBranches };
+}
+
+/** Lecteur simulé du banc ; prise vide : chaque appel est refusé. */
+function simule(): LecteurSimule {
+  const branche = prises.bancLecteur?.simule;
+  if (branche) return branche;
+  const refus = () => Promise.reject(outilsNonBranches());
+  return { commande: refus, ecrire: refus, lire: refus, observer: refus, ecouterEvenements: refus };
 }
 
 /** Lancement de mpv.exe : le chemin du programme est fixé côté Rust (ressource `mpv/mpv.exe`). */
@@ -82,7 +91,7 @@ export function command(name: string, args?: unknown[]): Promise<unknown> {
   if (VERROU_BANC && (name === 'loadfile' || name === 'loadlist')) {
     // loadlist et les options de fichier de loadfile (3e argument et suivants) ne servent pas dans
     // l'app : refusés dans le banc, pour qu'un ajout futur ne passe jamais sous le verrou.
-    const refus = name === 'loadlist' || (args?.length ?? 0) > 2 ? (noterTentative('autre', false), erreurLectureRefusee()) : verrouBanc(args);
+    const refus = name === 'loadlist' || (args?.length ?? 0) > 2 ? verrou().refuser() : verrou().verrouLecture(args);
     if (refus) return Promise.reject(refus);
   }
   // Pause basculée par l'utilisateur : la reprise automatique d'après chargement ne doit pas l'annuler
@@ -94,7 +103,7 @@ export function command(name: string, args?: unknown[]): Promise<unknown> {
     if (name === 'stop' && isAndroid()) {
       android.setFullscreen(false).catch((e) => console.warn('[BANC] sortie du plein écran impossible :', e));
     }
-    return simule.commande(name, args);
+    return simule().commande(name, args);
   }
   return isAndroid() ? android.command(name, args) : desktopCommand(name, args);
 }
@@ -105,11 +114,10 @@ export function setProperty<T = never, K extends string = string>(
 ): Promise<void> {
   // Banc : aucune propriété qui ouvrirait une adresse sans passer par loadfile
   if (VERROU_BANC && /^(stream-open-filename|path|playlist)/.test(name)) {
-    noterTentative('autre', false);
-    return Promise.reject(erreurLectureRefusee());
+    return Promise.reject(verrou().refuser());
   }
   if (name === 'pause') cancelForcedUnpause();
-  if (LECTEUR_SIMULE) return simule.ecrire(name, value);
+  if (LECTEUR_SIMULE) return simule().ecrire(name, value);
   if (isAndroid()) return android.setProperty(name, value);
   return desktopCommand('set_property', [name, value]).then(() => undefined);
 }
@@ -117,7 +125,7 @@ export function setProperty<T = never, K extends string = string>(
 export function getProperty<T = never, K extends string = string>(
   name: K,
 ): Promise<[T] extends [never] ? MpvPropertyValue<K> : T> {
-  if (LECTEUR_SIMULE) return simule.lire(name) as Promise<[T] extends [never] ? MpvPropertyValue<K> : T>;
+  if (LECTEUR_SIMULE) return simule().lire(name) as Promise<[T] extends [never] ? MpvPropertyValue<K> : T>;
   if (isAndroid()) {
     return android.getProperty(name) as Promise<[T] extends [never] ? MpvPropertyValue<K> : T>;
   }
@@ -128,7 +136,7 @@ export function observeProperties<T extends ReadonlyArray<string>>(
   properties: T,
   callback: (event: MpvPropertyEventFor<T[number]>) => void,
 ): Promise<UnlistenFn> {
-  if (LECTEUR_SIMULE) return simule.observer(properties, callback as (event: { name: string; data: unknown }) => void);
+  if (LECTEUR_SIMULE) return simule().observer(properties, callback as (event: { name: string; data: unknown }) => void);
   if (isAndroid()) {
     return android.observeProperties(properties, callback as (event: { name: string; data: unknown }) => void);
   }
@@ -158,7 +166,7 @@ export function isHttpsVerifiable(): Promise<boolean> {
 
 /** Événements bruts mpv (desktop). Android remonte ses erreurs via le plugin natif (androidPlayer). */
 export function listenDesktopEvents(callback: (event: MpvEvent) => void): Promise<UnlistenFn> {
-  if (LECTEUR_SIMULE) return isAndroid() ? Promise.resolve(() => {}) : simule.ecouterEvenements(callback as unknown as Parameters<typeof simule.ecouterEvenements>[0]);
+  if (LECTEUR_SIMULE) return isAndroid() ? Promise.resolve(() => {}) : simule().ecouterEvenements(callback as unknown as Parameters<LecteurSimule['ecouterEvenements']>[0]);
   if (isAndroid()) return Promise.resolve(() => {});
   return mpv.listenEvents(callback);
 }

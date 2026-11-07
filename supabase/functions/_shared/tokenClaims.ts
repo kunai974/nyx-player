@@ -13,3 +13,15 @@ export function isSignedInAccount(payload: Record<string, unknown>): boolean {
   const audiences = Array.isArray(aud) ? aud : [aud];
   return audiences.includes(TOKEN_AUDIENCE) && payload.is_anonymous !== true;
 }
+
+/**
+ * A guest's token (anonymous sign-in, "Continue without an account"): accepted by tmdb-proxy only,
+ * and only within the guest limits kept in the database. Every other function keeps
+ * `isSignedInAccount`, which refuses it.
+ */
+export function isGuestToken(payload: Record<string, unknown>): boolean {
+  const aud = payload.aud;
+  const audiences = Array.isArray(aud) ? aud : [aud];
+  return audiences.includes(TOKEN_AUDIENCE) && payload.is_anonymous === true
+    && typeof payload.sub === "string" && payload.sub.length > 0;
+}

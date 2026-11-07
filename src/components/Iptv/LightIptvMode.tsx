@@ -1,4 +1,4 @@
-import React, { useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { useTranslation } from 'react-i18next';
 import VirtualContentCarousel from '../Lists/VirtualContentCarousel';
 import { CarouselItem } from '../Lists/ContentCarousel';
@@ -8,15 +8,27 @@ import { isRailOn, type RailSource } from './rail/rail';
 import { createRailRowCache } from './rail/railRowCache';
 import type { LightMovie, LightSeries, LightCategory, LightIndexes } from '../../types/lightIndex';
 import { getIconUrl } from '../../types/lightIndex';
-import { OTHER_CATEGORY_ID, groupItemsByCategory, knownCategoryIds } from './categoryRows';
+import { OTHER_CATEGORY_ID, groupItemsByCategory, knownCategoryIds, orderRows } from './categoryRows';
 import { isHidden } from '../../services/hiddenCategoriesService';
 import { useHiddenCategoriesVersion } from '../../hooks/useHiddenCategoriesVersion';
+import { categoryPostersVersion, providerTmdbCount, subscribeTitlePosters, titlePostersVersion } from '../../services/titleTmdbLinkStore';
+import { requestShownM3uTitles } from '../../services/m3uTmdbLinks';
 import './IptvMode.css';
 
 const MAX_ITEMS_PER_ROW = 10;
 
 // Union type for light items
 type LightItem = LightMovie | LightSeries;
+
+/**
+ * Cartes d'une rangée affichée encore sans fiche TMDB : cherchées par leur titre (listes M3U, demandes
+ * groupées par le relais, une fois par titre). Le reste du catalogue n'est cherché qu'à l'ouverture d'une fiche.
+ */
+function searchShownCards(type: 'movies' | 'series', items: readonly LightItem[]): void {
+    const kind = type === 'movies' ? 'movie' : 'series';
+    const missing = items.slice(0, MAX_ITEMS_PER_ROW).filter((item) => item.tmdbId <= 0).map((item) => ({ kind, id: item.id } as const));
+    requestShownM3uTitles(missing);
+}
 
 /** Cartes d'une catégorie : ses premiers titres, puis « Voir tout » s'il en reste. */
 function buildCategoryItems(
@@ -72,6 +84,8 @@ interface LightCategoryRowProps {
     onItemClick: (id: number, tmdbId: number) => void;
     onSeeAll: (categoryId: string, categoryName: string) => void;
     gap?: number;
+    /** Change quand des cartes de la rangée reçoivent ou perdent une affiche TMDB */
+    postersVersion: number;
 }
 
 const LightCategoryRow: React.FC<LightCategoryRowProps> = React.memo(({
@@ -82,13 +96,18 @@ const LightCategoryRow: React.FC<LightCategoryRowProps> = React.memo(({
     onItemClick,
     onSeeAll,
     gap,
+    postersVersion,
 }) => {
     const { t } = useTranslation('dashboard');
 
     const carouselItems = useMemo(
         () => buildCategoryItems(category, categoryItems, type, iconPrefixes, onItemClick, onSeeAll, t('see_all' as 'loading')), // Cast: key exists but types not regenerated
-        [categoryItems, type, iconPrefixes, onItemClick, onSeeAll, category, t],
+        // postersVersion n'est pas lu : les images des cartes ont changé en place, il force le recalcul
+        // eslint-disable-next-line react-hooks/exhaustive-deps -- dépendance voulue, voir ci-dessus
+        [categoryItems, type, iconPrefixes, onItemClick, onSeeAll, category, t, postersVersion],
     );
+
+    useEffect(() => searchShownCards(type, categoryItems), [type, categoryItems]);
 
     if (carouselItems.length === 0) return null;
 
@@ -155,27 +174,31 @@ const LightIptvMode: React.FC<LightIptvModeProps> = ({
         // eslint-disable-next-line react-hooks/exhaustive-deps -- dépendance voulue, voir ci-dessus
     }, [lightIndexes.categories, type, hiddenVersion]);
 
-    // Titres rangés par catégorie (groupItemsByCategory) : tous, si le fournisseur ne donne aucun numéro TMDB
+    // Titres rangés par catégorie (groupItemsByCategory) : tous ; ceux qui ont une fiche TMDB d'abord si le
+    // fournisseur en donne (ceux trouvés par le titre ne comptent pas : titleTmdbLinkStore.ts)
     const byTmdb = type === 'movies' ? lightIndexes.moviesByTmdb : lightIndexes.seriesByTmdb;
-    const catalogHasTmdb = byTmdb.size > 0;
+    const catalogHasTmdb = providerTmdbCount(byTmdb) > 0;
     const catType = type === 'movies' ? 'movie' : 'series';
     const itemsByCategory = useMemo(
         () => groupItemsByCategory(itemsMap.values(), catalogHasTmdb, knownCategoryIds(lightIndexes.categories, catType)),
         [itemsMap, catalogHasTmdb, lightIndexes.categories, catType],
     );
+    // Affiches TMDB posées sur des titres sans image (trouvés par le titre) : seules les rangées touchées se
+    // refont, sans changer d'ordre (« Autres » mêle plusieurs catégories : elle suit toutes les affiches)
+    const postersVersion = useSyncExternalStore(subscribeTitlePosters, titlePostersVersion);
+    const rowPostersVersion = (categoryId: string) =>
+        (categoryId === OTHER_CATEGORY_ID ? postersVersion : categoryPostersVersion(categoryId));
 
     // Filter categories that have items, then « Autres » (titres d'une catégorie que le fournisseur ne liste pas)
     const otherLabel = t('other_category' as 'loading'); // Cast: key exists but types not regenerated
     const categoriesWithItems = useMemo(() => {
-        const withItems = categories.filter((cat) => {
-            const catItems = itemsByCategory.get(cat.id);
-            return catItems && catItems.length > 0;
-        });
+        // Catégories sans fiche TMDB en bas de la page, puis « Autres »
+        const withItems = orderRows(categories, itemsByCategory, catalogHasTmdb);
         if (itemsByCategory.has(OTHER_CATEGORY_ID)) {
             withItems.push({ id: OTHER_CATEGORY_ID, name: otherLabel, type: catType });
         }
         return withItems;
-    }, [categories, itemsByCategory, otherLabel, catType]);
+    }, [categories, itemsByCategory, catalogHasTmdb, otherLabel, catType]);
 
     // TV : rangées du rail recyclé (rail/rail.ts), écrites sans React. Les gestes passent par la dernière version des
     // rappels : sans quoi chaque rendu de l'accueil (qui les recrée) ferait remplir de nouveau les rangées montées
@@ -199,13 +222,18 @@ const LightIptvMode: React.FC<LightIptvModeProps> = ({
             const category = byId.get(key);
             if (!category) return null;
             const list = itemsByCategory.get(category.id);
-            return railCache.get(key, [category, list, type, iconPrefixes, seeAll, watchlistLabel], () => ({
-                title: category.name,
-                items: buildCategoryItems(category, list || [], type, iconPrefixes, openItem, openSeeAll, seeAll),
-                watchlistLabel,
-            }));
+            return railCache.get(key, [category, list, type, iconPrefixes, seeAll, watchlistLabel, rowPostersVersion(key)], () => {
+                searchShownCards(type, list || []);
+                return {
+                    title: category.name,
+                    items: buildCategoryItems(category, list || [], type, iconPrefixes, openItem, openSeeAll, seeAll),
+                    watchlistLabel,
+                };
+            });
         };
-    }, [categoriesWithItems, itemsByCategory, type, iconPrefixes, openItem, openSeeAll, t, railCache]);
+        // postersVersion : la source se refait, le cache garde les rangées dont aucune carte n'a changé
+        // eslint-disable-next-line react-hooks/exhaustive-deps -- rowPostersVersion lit postersVersion
+    }, [categoriesWithItems, itemsByCategory, type, iconPrefixes, openItem, openSeeAll, t, railCache, postersVersion]);
 
     if (forceNoCategories || categoriesWithItems.length === 0) {
         return (
@@ -229,6 +257,7 @@ const LightIptvMode: React.FC<LightIptvModeProps> = ({
                         <LightCategoryRow
                             category={category}
                             categoryItems={categoryItems}
+                            postersVersion={rowPostersVersion(category.id)}
                             type={type}
                             iconPrefixes={iconPrefixes}
                             onItemClick={onItemClick}

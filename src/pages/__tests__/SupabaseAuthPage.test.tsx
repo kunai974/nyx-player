@@ -18,6 +18,7 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 const mockSignIn = vi.fn();
 const mockSignUp = vi.fn();
 let mockSessionExpired = false;
+const mockEnterGuest = vi.fn();
 
 vi.mock('react-i18next', () => ({
     useTranslation: () => ({
@@ -31,6 +32,7 @@ vi.mock('../../contexts/SupabaseAuthContext', () => ({
         signIn: mockSignIn,
         signUp: mockSignUp,
         sessionExpired: mockSessionExpired,
+        enterGuestMode: mockEnterGuest,
     }),
 }));
 
@@ -105,8 +107,8 @@ import { setTvMode } from '../../utils/platform';
 // ============================================================================
 
 /** Render le composant et retourne le container + helpers */
-const renderAuth = () => {
-    const result = render(<SupabaseAuthPage />);
+const renderAuth = (props: { initialMode?: 'login' | 'register' } = {}) => {
+    const result = render(<SupabaseAuthPage {...props} />);
     return {
         container: result.container,
         unmount: result.unmount,
@@ -390,5 +392,35 @@ describe('SupabaseAuthPage', () => {
         await waitFor(() => {
             expect(submitBtn).toBeDisabled();
         });
+    });
+});
+
+describe('SupabaseAuthPage — sans compte', () => {
+    it('« Continuer sans compte » est sous le formulaire et ouvre l\'espace invité', () => {
+        renderAuth();
+        const btn = screen.getByTestId('auth-guest');
+        fireEvent.click(btn);
+        expect(mockEnterGuest).toHaveBeenCalledTimes(1);
+    });
+
+    it('« ou » sépare la connexion du mode invité, qui est un vrai bouton secondaire (pas un texte)', () => {
+        renderAuth();
+        const btn = screen.getByTestId('auth-guest');
+        expect(btn).toHaveClass('nyx-btn', 'nyx-btn--secondary');
+        const or = screen.getByRole('separator');
+        expect(or).toHaveTextContent('supabase_or');
+        // Le « ou » vient avant le bouton invité
+        expect(or.compareDocumentPosition(btn) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    });
+
+    it('le bouton ne figure pas sur l\'écran « mot de passe oublié »', () => {
+        renderAuth();
+        fireEvent.click(screen.getByTestId('auth-forgot'));
+        expect(screen.queryByTestId('auth-guest')).not.toBeInTheDocument();
+    });
+
+    it('ouverte depuis « Créer un compte » des réglages d\'un invité : l\'onglet de création est ouvert', () => {
+        renderAuth({ initialMode: 'register' });
+        expect(screen.getByTestId('auth-tab-register').className).toContain('supabase-auth__tab--active');
     });
 });

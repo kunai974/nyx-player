@@ -158,7 +158,7 @@ export function preparePendingCatalog(): Promise<void> {
 
   preparing = (async () => {
     const seq = await readChangesSeq();
-    const indexes = await loadLightIndexes();
+    const indexes = await loadLightIndexes({ remember: false });
     if (!stillCurrent() || isPlaybackBusy()) return;
     const catalog = await prepareRefreshedCatalog(indexes, { allowNetwork: false, isStillCurrent: stillCurrent });
     if (!stillCurrent() || isPlaybackBusy()) return;

@@ -9,6 +9,7 @@
   /* Approximate height for layout */
 }
 
+/* stylelint-disable-next-line defensive-css/no-accidental-hover -- zone fluidité (rangées de l'accueil TV, validées) : le survol de bureau y est annulé sur TV par tv.css avec les mêmes sélecteurs, sans media ; l'entourer de (hover: hover) changerait cet équilibre */
 .content-carousel-container:hover {
   z-index: 100;
   /* High z-index to ensure hover card stays on top of everything */
@@ -67,6 +68,7 @@
 }
 
 /* Hover Effect - Stage 1 (immediate) */
+/* stylelint-disable-next-line defensive-css/no-accidental-hover -- zone fluidité (rangées de l'accueil TV, validées) : le survol de bureau y est annulé sur TV par tv.css avec les mêmes sélecteurs, sans media ; l'entourer de (hover: hover) changerait cet équilibre */
 .carousel-card:hover {
   transform: scale(1.05);
   box-shadow: 0 10px 20px rgba(0, 0, 0, 0.5);
@@ -240,6 +242,7 @@
   bottom: 0;
   left: 0;
   width: 100%;
+  /* stylelint-disable-next-line defensive-css/no-fixed-sizes -- trait fin de 3 px : épaisseur voulue, pas une taille de texte */
   height: 3px;
   background-color: rgba(255, 255, 255, 0.2);
 }
@@ -282,6 +285,7 @@
   text-shadow: 0 2px 4px rgba(0, 0, 0, 0.5);
 }
 
+/* stylelint-disable-next-line defensive-css/no-accidental-hover -- zone fluidité (rangées de l'accueil TV, validées) : le survol de bureau y est annulé sur TV par tv.css avec les mêmes sélecteurs, sans media ; l'entourer de (hover: hover) changerait cet équilibre */
 .carousel-card:hover .card-play-button {
   opacity: 1;
   transform: translate(-50%, -50%) scale(1.1);
@@ -297,6 +301,7 @@
   animation: shimmer 1.5s infinite;
 }
 
+/* stylelint-disable-next-line defensive-css/no-accidental-hover -- zone fluidité (rangées de l'accueil TV, validées) : le survol de bureau y est annulé sur TV par tv.css avec les mêmes sélecteurs, sans media ; l'entourer de (hover: hover) changerait cet équilibre */
 .carousel-card.skeleton:hover {
   transform: none;
   box-shadow: none;
@@ -515,7 +520,9 @@
 
 
 .card-action-btn {
+  /* stylelint-disable-next-line defensive-css/no-fixed-sizes -- zone fluidité (rangées de l'accueil TV, validées) : bouton rond de 32 px, gardé tel quel */
   width: 32px;
+  /* stylelint-disable-next-line defensive-css/no-fixed-sizes -- zone fluidité (rangées de l'accueil TV, validées) : bouton rond de 32 px, gardé tel quel */
   height: 32px;
   display: flex;
   flex-wrap: nowrap;
@@ -540,6 +547,7 @@
   flex-shrink: 0;
 }
 
+/* stylelint-disable-next-line defensive-css/no-accidental-hover -- zone fluidité (rangées de l'accueil TV, validées) : le survol de bureau y est annulé sur TV par tv.css avec les mêmes sélecteurs, sans media ; l'entourer de (hover: hover) changerait cet équilibre */
 .card-action-btn.info-btn:hover {
   transform: scale(1.2) rotate(-5deg);
   color: white;
@@ -606,6 +614,7 @@
   transition: background 0.2s ease, border-color 0.2s ease, transform 0.2s ease;
 }
 
+/* stylelint-disable-next-line defensive-css/no-accidental-hover -- zone fluidité (rangées de l'accueil TV, validées) : le survol de bureau y est annulé sur TV par tv.css avec les mêmes sélecteurs, sans media ; l'entourer de (hover: hover) changerait cet équilibre */
 .carousel-card.action-button:hover {
   background: linear-gradient(135deg, rgba(255, 255, 255, 0.15) 0%, rgba(255, 255, 255, 0.08) 100%);
   border-color: rgba(255, 255, 255, 0.3);
@@ -627,6 +636,7 @@
 .carousel-card.action-button .card-bottom-bar,
 .carousel-card.action-button .card-info-overlay,
 .carousel-card.action-button .card-action-btn {
+  /* stylelint-disable-next-line declaration-no-important -- zone fluidité (rangées de l'accueil TV, validées) : garde-fou défensif : ces éléments ne doivent jamais apparaître sur une carte-bouton, quelle que soit la règle d'état ajoutée plus tard */
   display: none !important;
 }
 
@@ -652,6 +662,7 @@
 }
 
 /* Show on hover */
+/* stylelint-disable-next-line defensive-css/no-accidental-hover -- zone fluidité (rangées de l'accueil TV, validées) : le survol de bureau y est annulé sur TV par tv.css avec les mêmes sélecteurs, sans media ; l'entourer de (hover: hover) changerait cet équilibre */
 .carousel-card:hover>.card-watchlist-btn,
 .carousel-card.show-details>.card-watchlist-btn,
 .carousel-card.show-info>.card-watchlist-btn {

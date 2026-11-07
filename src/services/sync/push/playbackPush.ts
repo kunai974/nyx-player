@@ -11,6 +11,7 @@ import { sendInBackground } from './sendInBackground';
 import { cloudPosterUrl } from '../cloudPoster';
 import { cloudContainerExtension, cloudNextEpisodeId, cloudTitle } from '../cloudLimits';
 import { serverNow } from '../serverClock';
+import { providerSyncScope, localKey, ownedRowHashes } from '../providerSync';
 
 /**
  * Fire-and-forget upsert immédiat d'une progression vers Supabase.
@@ -37,14 +38,16 @@ export function pushPlaybackUpsertToCloud(
     updated_at?: number;
   }
 ): void {
-  if (!canSync()) return;
+  // Tables par fournisseur et fournisseur de l'appareil inconnu : la synchro suivante s'en charge
+  const scope = providerSyncScope('playback');
+  if (!canSync() || !scope) return;
 
   const userId = getCurrentSyncUserId()!;
-  const generation = currentGeneration('playback');
+  const generation = currentGeneration(scope.baselineScope);
   const updatedAt = data.updated_at ?? serverNow();
   sendInBackground(
     supabase
-      .from('user_playback_progress')
+      .from(scope.table)
       .upsert(
         {
           user_id: userId,
@@ -63,12 +66,13 @@ export function pushPlaybackUpsertToCloud(
           duration_seconds: data.duration_seconds,
           container_extension: cloudContainerExtension(data.container_extension),
           updated_at: new Date(updatedAt).toISOString(),
-          provider_hash: getLastProviderHash(),
+          // Fournisseur de l'appareil (tables par fournisseur), sinon sync/syncPurge.ts
+          provider_hash: scope.on ? scope.deviceHash : getLastProviderHash(),
         },
-        { onConflict: 'user_id,stream_id' }
+        { onConflict: scope.on ? 'user_id,provider_hash,stream_id' : 'user_id,stream_id' }
       ),
     'playback upsert',
-    () => afterSend(userId, 'playback', generation, { set: [[String(streamId), updatedAt]] }),
+    () => afterSend(userId, scope.baselineScope, generation, { set: [[localKey(scope, String(streamId)), updatedAt]] }),
   );
 }
 
@@ -77,17 +81,21 @@ export function pushPlaybackUpsertToCloud(
  * Appelé par playbackProgressService clear functions.
  */
 export function pushPlaybackDeleteToCloud(streamId: number): void {
-  if (!canSync()) return;
+  const scope = providerSyncScope('playback');
+  if (!canSync() || !scope) return;
 
   const userId = getCurrentSyncUserId()!;
-  const generation = currentGeneration('playback');
+  const generation = currentGeneration(scope.baselineScope);
+  let request = supabase
+    .from(scope.table)
+    .delete()
+    .eq('user_id', userId)
+    .eq('stream_id', streamId);
+  // Ses lignes seulement, copie sans empreinte comprise (sync/providerSync.ts)
+  if (scope.on) request = request.in('provider_hash', ownedRowHashes(scope));
   sendInBackground(
-    supabase
-      .from('user_playback_progress')
-      .delete()
-      .eq('user_id', userId)
-      .eq('stream_id', streamId),
+    request,
     'playback delete',
-    () => afterSend(userId, 'playback', generation, { remove: [String(streamId)] }),
+    () => afterSend(userId, scope.baselineScope, generation, { remove: [localKey(scope, String(streamId))] }),
   );
 }
