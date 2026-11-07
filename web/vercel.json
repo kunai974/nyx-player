@@ -9,7 +9,7 @@
   "redirects": [
     {
       "source": "/tv-apk",
-      "destination": "https://releases.nyxplayer.app/nyx-player-armv7-v0.8.1.apk",
+      "destination": "https://releases.nyxplayer.app/nyx-player-armv7-v0.9.0.apk",
       "permanent": false
     }
   ],

@@ -1,11 +1,11 @@
 {
-  "version": "0.8.1",
-  "notes": "Movies and series now show for providers without TMDB links (Home and Search), new Other row, works with more providers (clearer messages for expired subscriptions and refused certificates), next-episode countdown pauses with the video.",
-  "pub_date": "2026-11-02T22:47:17Z",
+  "version": "0.9.0",
+  "notes": "Use Nyx without an account, M3U playlists (link or file), titles found by name for providers without TMDB links, My list follows your titles to a new provider, TV sign-in with your phone via QR code.",
+  "pub_date": "2026-11-07T15:19:12Z",
   "platforms": {
     "windows-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVSQU16ZkRPTlY0MjF4MEU2MVBLKzhoeGMxN0FEdklQMzRMY1BMNS9TKzlscUlJSXAyRHdNdFJ2Qmg3UFVvWEcrV3B1ZXRUS3FHUVV4anlGYVh6VWRhM1crYzZWdnBvandrPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkzNjU5NjAwCWZpbGU6Tnl4IFBsYXllcl8wLjguMV94NjQtc2V0dXAuZXhlCllBdmZTbHRmMXJSWFMwejBWQ3pySjdpc2t1WWJDY0ZOdGhMeUI5bUF1U2hhdWxPdmZjeEd0dThVdklVdFJsQ0o5ZzdnNm41dXJRTC93ejc2WnBrS0FRPT0K",
-      "url": "https://releases.nyxplayer.app/Nyx-Player_0.8.1_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVSQU16ZkRPTlY0MjNNT2NNcG9XcFJ6OG9QMEszZnhaSWVDMkpBdlpPZS81MitCNklMQnJ4NHVNc1I0ZXg1bEJoSXJBbHlHN3V3VmdSTCtOVkpIWWNlT1NkWTcrTzdhQmdBPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzk0MDY0NzI4CWZpbGU6Tnl4IFBsYXllcl8wLjkuMF94NjQtc2V0dXAuZXhlCko4NS9mQitwbGViTGRoVmlyT1JFWDA5dUtaSHlLMW84OXJVM1hTNi9qcG16WVhSYThQQ2NXVlgzVHhDUTd2akhiT1RkU3VzQlNveXQzWkdMWlFmK0FnPT0K",
+      "url": "https://releases.nyxplayer.app/Nyx-Player_0.9.0_x64-setup.exe"
     }
   }
 }
