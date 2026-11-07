@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="robots" content="noindex, nofollow">
+    <meta name="referrer" content="no-referrer">
+    <title>Connect your TV — Nyx Player</title>
+    <link rel="icon" href="/favicon.ico" sizes="48x48">
+    <link rel="icon" type="image/png" sizes="96x96" href="/assets/favicon-96.png">
+    <link rel="apple-touch-icon" href="/assets/apple-touch-icon.png">
+    <link rel="stylesheet" href="../styles.css">
+    <style>
+        .tvlink-section { margin-top: 1.25rem; }
+        .tvlink-section h2 { font-size: 1.05rem; margin: 0 0 0.75rem; }
+        .tvlink-tabs { display: flex; flex-wrap: nowrap; gap: 0.5rem; margin-bottom: 0.75rem; }
+        .tvlink-tabs button { flex: 1 1 0; min-width: 0; }
+        .tvlink-tabs button[aria-pressed="true"] { outline: 0.125rem solid currentColor; }
+        .tvlink-note { font-size: 0.85rem; opacity: 0.75; margin: 0.75rem 0 0; }
+        .tvlink-optional { font-weight: normal; opacity: 0.7; }
+    </style>
+</head>
+
+<body class="page-centered">
+    <div class="card">
+        <div class="lang-switch auth-lang" role="group" aria-label="Language / Langue">
+            <button type="button" class="lang-switch__option" data-lang="en" lang="en">EN</button>
+            <button type="button" class="lang-switch__option" data-lang="fr" lang="fr">FR</button>
+        </div>
+        <div class="brand"><img src="../assets/logo-principal-blanc.png" alt="Nyx Player"></div>
+        <p class="subtitle" data-t="subtitle"></p>
+
+        <!-- Lien incomplet (QR code mal lu, ou page ouverte sans QR code) -->
+        <div id="state-invalid" class="hidden">
+            <div class="message message--error"><span data-t="invalid"></span></div>
+        </div>
+
+        <!-- Formulaire -->
+        <form id="state-form" class="hidden" autocomplete="on">
+            <div id="section-account" class="tvlink-section hidden">
+                <h2 data-t="accountTitle"></h2>
+                <div class="form-group">
+                    <label class="form-label" for="email" data-t="email"></label>
+                    <input class="form-input" id="email" type="email" autocomplete="username" inputmode="email"
+                        autocapitalize="none" spellcheck="false">
+                </div>
+                <div class="form-group">
+                    <label class="form-label" for="password" data-t="password"></label>
+                    <input class="form-input" id="password" type="password" autocomplete="current-password">
+                </div>
+            </div>
+
+            <div class="tvlink-section">
+                <h2><span data-t="providerTitle"></span> <span id="provider-optional" class="tvlink-optional hidden"
+                        data-t="optional"></span></h2>
+                <div class="tvlink-tabs" role="group">
+                    <button type="button" class="btn btn--outline" id="tab-xtream" aria-pressed="true" data-t="tabXtream"></button>
+                    <button type="button" class="btn btn--outline" id="tab-m3u" aria-pressed="false" data-t="tabM3u"></button>
+                </div>
+                <div id="fields-xtream">
+                    <div class="form-group">
+                        <label class="form-label" for="host" data-t="host"></label>
+                        <input class="form-input" id="host" type="url" placeholder="http://example.com:8080"
+                            autocomplete="off" autocapitalize="none" spellcheck="false">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="username" data-t="username"></label>
+                        <input class="form-input" id="username" type="text" autocomplete="off" autocapitalize="none"
+                            spellcheck="false">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="provider-password" data-t="password"></label>
+                        <input class="form-input" id="provider-password" type="password" autocomplete="off">
+                    </div>
+                </div>
+                <div id="fields-m3u" class="hidden">
+                    <div class="form-group">
+                        <label class="form-label" for="m3u" data-t="m3u"></label>
+                        <textarea class="form-input" id="m3u" rows="3" autocomplete="off" autocapitalize="none"
+                            spellcheck="false"></textarea>
+                    </div>
+                </div>
+            </div>
+
+            <div id="form-error" class="message message--error message--inline hidden" role="alert"></div>
+            <button type="submit" class="btn btn--primary" id="submit-btn" data-t="send"></button>
+            <p class="tvlink-note" data-t="privacy"></p>
+        </form>
+
+        <!-- Envoi en cours -->
+        <div id="state-sending" class="spinner-container hidden">
+            <div class="spinner"></div>
+            <span class="spinner-text" id="sending-text" data-t="sending"></span>
+        </div>
+
+        <!-- Fait -->
+        <div id="state-done" class="hidden">
+            <div class="message message--success"><span data-t="done"></span></div>
+        </div>
+
+        <div class="footer">&copy; 2026 Nyx Player</div>
+    </div>
+
+    <script src="/auth/supabase-config.js"></script>
+    <script type="module" src="/tv/tvlink-page.js"></script>
+</body>
+
+</html>

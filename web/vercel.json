@@ -6,6 +6,13 @@
     }
   },
   "ignoreCommand": "if [ \"$VERCEL_ENV\" = \"production\" ]; then exit 1; fi; exit 0",
+  "redirects": [
+    {
+      "source": "/tv-apk",
+      "destination": "https://releases.nyxplayer.app/nyx-player-armv7-v0.8.1.apk",
+      "permanent": false
+    }
+  ],
   "headers": [
     {
       "source": "/auth/(.*)",
@@ -66,6 +73,80 @@
         {
           "key": "Permissions-Policy",
           "value": "camera=(), microphone=(), geolocation=(), payment=(), usb=()"
+        }
+      ]
+    },
+    {
+      "source": "/tv/(.*)",
+      "headers": [
+        {
+          "key": "Content-Security-Policy",
+          "value": "default-src 'self'; script-src 'self'; connect-src 'self' https://tgbctbkcsvziongtekku.supabase.co wss://tgbctbkcsvziongtekku.supabase.co; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' https://nyxplayer.app; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+        },
+        {
+          "key": "X-Content-Type-Options",
+          "value": "nosniff"
+        },
+        {
+          "key": "X-Frame-Options",
+          "value": "DENY"
+        },
+        {
+          "key": "Referrer-Policy",
+          "value": "no-referrer"
+        },
+        {
+          "key": "Strict-Transport-Security",
+          "value": "max-age=63072000"
+        },
+        {
+          "key": "Permissions-Policy",
+          "value": "camera=(), microphone=(), geolocation=(), payment=(), usb=()"
+        },
+        {
+          "key": "X-Robots-Tag",
+          "value": "noindex, nofollow"
+        },
+        {
+          "key": "Cache-Control",
+          "value": "no-store"
+        }
+      ]
+    },
+    {
+      "source": "/tv",
+      "headers": [
+        {
+          "key": "Content-Security-Policy",
+          "value": "default-src 'self'; script-src 'self'; connect-src 'self' https://tgbctbkcsvziongtekku.supabase.co wss://tgbctbkcsvziongtekku.supabase.co; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' https://nyxplayer.app; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+        },
+        {
+          "key": "X-Content-Type-Options",
+          "value": "nosniff"
+        },
+        {
+          "key": "X-Frame-Options",
+          "value": "DENY"
+        },
+        {
+          "key": "Referrer-Policy",
+          "value": "no-referrer"
+        },
+        {
+          "key": "Strict-Transport-Security",
+          "value": "max-age=63072000"
+        },
+        {
+          "key": "Permissions-Policy",
+          "value": "camera=(), microphone=(), geolocation=(), payment=(), usb=()"
+        },
+        {
+          "key": "X-Robots-Tag",
+          "value": "noindex, nofollow"
+        },
+        {
+          "key": "Cache-Control",
+          "value": "no-store"
         }
       ]
     }
