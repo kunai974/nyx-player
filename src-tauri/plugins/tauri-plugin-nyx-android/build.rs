@@ -1,4 +1,5 @@
-// Commands are implemented in Kotlin only; JS invokes are routed to the native plugin.
+// Commands are implemented natively: Kotlin on Android (android/), Swift on iOS (ios/).
+// JS invokes are routed to the native plugin.
 // This list exists so tauri-plugin generates one ACL permission per command.
 const COMMANDS: &[&str] = &[
     "play",
@@ -31,5 +32,6 @@ const COMMANDS: &[&str] = &[
 fn main() {
     tauri_plugin::Builder::new(COMMANDS)
         .android_path("android")
+        .ios_path("ios")
         .build();
 }

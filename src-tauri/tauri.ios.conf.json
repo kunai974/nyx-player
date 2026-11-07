@@ -1,0 +1,12 @@
+{
+  "bundle": {
+    "resources": null,
+    "createUpdaterArtifacts": false,
+    "iOS": {
+      "minimumSystemVersion": "15.0"
+    }
+  },
+  "plugins": {
+    "updater": null
+  }
+}

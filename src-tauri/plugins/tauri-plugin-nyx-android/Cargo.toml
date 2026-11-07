@@ -1,7 +1,7 @@
 [package]
 name = "tauri-plugin-nyx-android"
 version = "0.1.0"
-description = "Nyx Player native Android bridge: embedded Media3 player and Keystore-backed secure storage"
+description = "Nyx Player native bridge for Android and iOS: embedded player and secure storage"
 edition = "2021"
 license = "GPL-3.0-or-later"
 rust-version = "1.77.2"

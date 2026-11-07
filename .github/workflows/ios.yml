@@ -1,0 +1,160 @@
+# iOS build check: compiles the app for iPhone (web UI, Rust and the Swift side of the nyx-android
+# plugin), produces an unsigned IPA, then launches a Simulator build and takes a screenshot of the
+# first screen. A compile-and-test check only:
+#   - no secrets: placeholder Supabase values as in ci.yml, so the app stops at the sign-in screen;
+#   - the IPA is for build verification. To try it on a phone, sideload it (AltStore, SideStore,
+#     Sideloadly) with your own Apple ID and your own bundle ID;
+#   - macOS minutes are costly: never automatic, on either repo. Only on a PR carrying the
+#     `ci-github` label, or with the "Run workflow" button
+#     (scripts/test/workflows-economie.test.mjs checks the gate).
+# Xcode 26.x (not 27): Tauri 2.11 + Xcode 27 has a release-link bug (tauri-apps/tauri#16130).
+# First run without src-tauri/gen/apple: `tauri ios init` generates it and the job uploads it as the
+# artifact `nyx-ios-gen-apple`, to be committed like gen/android.
+name: iOS
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, labeled]
+    paths:
+      - 'src/**'
+      - 'src-tauri/**'
+      - 'public/**'
+      - 'index.html'
+      - 'package.json'
+      - 'pnpm-lock.yaml'
+      - '.npmrc'
+      - 'vite.config.ts'
+      - 'tsconfig*.json'
+      - '.github/workflows/ios.yml'
+  workflow_dispatch:
+
+# A different label added to the PR must not cancel a run in progress: separate group.
+concurrency:
+  group: ios-${{ github.ref }}${{ (github.event.action == 'labeled' && github.event.label.name != 'ci-github') && format('-{0}', github.run_id) || '' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  ios:
+    name: iOS build (unsigned IPA + Simulator)
+    if: >-
+      (github.event_name != 'pull_request' && github.event_name != 'push') ||
+      (github.event.action == 'labeled' && github.event.label.name == 'ci-github') ||
+      (github.event_name == 'pull_request' && github.event.action != 'labeled' &&
+        contains(github.event.pull_request.labels.*.name, 'ci-github'))
+    runs-on: macos-26
+    timeout-minutes: 60
+    env:
+      # Placeholders, as in ci.yml: the Supabase client needs a URL at load time; no real call is made.
+      VITE_SUPABASE_URL: https://example.invalid
+      VITE_SUPABASE_ANON_KEY: ci-placeholder
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+
+      - name: Xcode 26
+        run: |
+          set -euo pipefail
+          xcode="$(ls -d /Applications/Xcode_26*.app | sort -V | tail -n 1)"
+          sudo xcode-select -s "$xcode"
+          xcodebuild -version
+
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+        with:
+          toolchain: stable
+          targets: aarch64-apple-ios,aarch64-apple-ios-sim
+
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
+        with:
+          workspaces: src-tauri
+          key: ios
+
+      - name: xcodegen
+        run: brew list xcodegen >/dev/null 2>&1 || brew install xcodegen
+
+      # Only while the Xcode project isn't committed yet
+      - name: Generate the Xcode project
+        id: init
+        run: |
+          if [ -d src-tauri/gen/apple ]; then
+            echo "generated=false" >> "$GITHUB_OUTPUT"
+          else
+            pnpm tauri ios init --ci
+            echo "generated=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Upload the generated Xcode project
+        if: steps.init.outputs.generated == 'true'
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5
+        with:
+          name: nyx-ios-gen-apple
+          include-hidden-files: true
+          path: |
+            src-tauri/gen/apple
+            !src-tauri/gen/apple/build
+            !src-tauri/gen/apple/Externals
+            !src-tauri/gen/apple/**/xcuserdata
+
+      # Also runs `pnpm build` (web UI) before Xcode compiles the Rust and Swift code.
+      - name: Build the unsigned IPA
+        run: pnpm tauri ios build --ci --target aarch64 --no-sign
+
+      - uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5
+        with:
+          name: nyx-ios-unsigned-ipa
+          path: src-tauri/gen/apple/build/**/*.ipa
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Build for the Simulator
+        run: pnpm tauri ios build --ci --target aarch64-sim --debug
+
+      # Launch on an iPhone Simulator: fails if the app isn't running 25 s later (plugin not linked,
+      # Swift entry point missing, crash at start-up). The screenshot shows the safe-area layout.
+      - name: Launch in the Simulator
+        run: |
+          set -euo pipefail
+          # Xcode's archive also leaves incomplete .app folders: keep the first complete one whose
+          # Info.plist says it was built for the Simulator.
+          app=""
+          while IFS= read -r candidate; do
+            if [ -f "$candidate/Info.plist" ] &&
+              plutil -extract CFBundleSupportedPlatforms json -o - "$candidate/Info.plist" | grep -q iPhoneSimulator; then
+              app="$candidate"
+              break
+            fi
+          done < <(find src-tauri/gen/apple/build "$HOME/Library/Developer/Xcode/DerivedData" -name '*.app' -type d 2>/dev/null)
+          test -n "$app" || { echo "::error::No Simulator .app found"; exit 1; }
+          echo "App: $app"
+          # Info.ios.plist merged into the app's Info.plist
+          modes="$(plutil -extract UIBackgroundModes json -o - "$app/Info.plist")"
+          echo "UIBackgroundModes: $modes"
+          test "$modes" = '["audio"]' || { echo "::error::Info.ios.plist not merged"; exit 1; }
+          udid="$(xcrun simctl list devices available | grep -E 'iPhone 1[6-9]' | grep -v 'Plus' | head -n 1 | grep -oE '[0-9A-F-]{36}')"
+          test -n "$udid" || { echo "::error::No iPhone 16+ Simulator available"; exit 1; }
+          xcrun simctl boot "$udid"
+          xcrun simctl bootstatus "$udid" -b
+          xcrun simctl install "$udid" "$app"
+          xcrun simctl launch "$udid" com.nyxplayer.app
+          sleep 25
+          xcrun simctl spawn "$udid" launchctl list | grep -q com.nyxplayer.app || { echo "::error::Nyx is not running"; exit 1; }
+          xcrun simctl io "$udid" screenshot signin.png
+
+      - uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5
+        if: always()
+        with:
+          name: nyx-ios-sim-screenshot
+          path: signin.png
+          if-no-files-found: warn
+          retention-days: 14
